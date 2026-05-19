@@ -68,6 +68,27 @@ pub enum Error {
         line: usize,
         message: String,
     },
+
+    #[error("output.naming.regex `{pattern}` failed to compile: {reason}")]
+    NamingRegexInvalid { pattern: String, reason: String },
+
+    #[error("output.naming.regex `{pattern}` did not match filename `{filename}`")]
+    NamingRegexNoMatch { pattern: String, filename: String },
+
+    #[error("output.naming.template references undefined variable `{{{var}}}`")]
+    NamingUndefinedVar { var: String },
+
+    #[error(
+        "output.naming.template variable `{{{var}}}` is a string; \
+         format spec `:{spec}` requires an integer-typed value"
+    )]
+    NamingFormatOnString { var: String, spec: String },
+
+    #[error(
+        "output.naming.template variable `{{{var}}}` has unrecognized format spec `:{spec}`; \
+         expected `0N` for zero-padded width N (e.g. `:02`)"
+    )]
+    NamingUnknownFormatSpec { var: String, spec: String },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

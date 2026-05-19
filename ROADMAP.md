@@ -46,8 +46,14 @@ Foundation pieces that are working end-to-end. Most have at least light test cov
 - Source probing via ffmpeg: stream enumeration and crop detection — DESIGN.md §Probe. (`pipeline/probe.rs`.)
 - Per-file error handling with batch-continue + end-of-batch summary — DESIGN.md §Batch behavior. (`pipeline/mod.rs`.)
 - Audio copy-vs-transcode decision tree — DESIGN.md §Audio actions. (`pipeline/ffmpeg_args.rs`.)
-- ffmpeg arg construction for video encoder, preset, tune, CRF, crop (pixels).
-- SRT parse/serialize/`subtract_by_timestamp` and ASS parse/serialize/`subtract_ass_by_timestamp`/`filter_ass`/`ass_to_srt` — DESIGN.md §Subtitle derivations. All in-memory subtitle operations are implemented; remaining subtitle work is integration (extraction, prep stage application, burn rendering, mux dispositions). (`subtitles.rs`.)
+- ffmpeg arg construction for video encoder, preset, tune, CRF, crop (pixels), deinterlace, detelecine, denoise, resolution/scale — DESIGN.md §Video. (`pipeline/ffmpeg_args.rs`.)
+- Audio and subtitle per-track metadata (`-metadata:s:`) and disposition (`-disposition:`) flags — DESIGN.md §Audio / §Subtitles. (`pipeline/ffmpeg_args.rs`.)
+- Soft subtitle mux with codec selection (`-c:s:`) — DESIGN.md §Mux. (`pipeline/ffmpeg_args.rs`.)
+- Burn subtitle rendering via `subtitles=` libass filtergraph filter — DESIGN.md §Burn. (`pipeline/ffmpeg_args.rs`.)
+- Subtitle extraction from source MKVs via ffmpeg (`-map 0:s:N`) — DESIGN.md §Pipeline. (`pipeline/subtitle_prep.rs`.)
+- Subtitle derivation prep stage: `filter`, `subtract`, `ass_to_srt` wired end-to-end — DESIGN.md §Subtitle derivations. (`pipeline/subtitle_prep.rs`.)
+- SRT parse/serialize/`subtract_by_timestamp` and ASS parse/serialize/`subtract_ass_by_timestamp`/`filter_ass`/`ass_to_srt` — DESIGN.md §Subtitle derivations. (`subtitles.rs`.)
+- Output filename naming: `naming.regex` capture + `naming.template` expansion with format specifiers; `episode`/`ep` capture auto-embeds episode metadata (`tves` for MP4, `PART_NUMBER` for MKV) — DESIGN.md §[output] §Naming. (`pipeline/naming.rs`.)
 
 ---
 
@@ -55,16 +61,10 @@ Foundation pieces that are working end-to-end. Most have at least light test cov
 
 Features with substantive code in place but missing wiring, edge cases, or the last mile to be usable end-to-end.
 
-### Pipeline & encoding
-- **Video preprocessing args to encoder** — DESIGN.md §Video. Deinterlace, detelecine, denoise, and resolution/scale are parsed and validated but **not yet emitted into the ffmpeg command line**.
-- **Output metadata embedding** — DESIGN.md §Audio / §Subtitles. Per-track lang/title/default/forced/commentary/etc. resolved correctly, but `-metadata:s:` and `-disposition:s:` flags aren't being written to ffmpeg.
-- **Soft subtitle mux** — DESIGN.md §Mux. Subtitle inputs are added to the ffmpeg invocation, but codec selection (`-c:s:`) and disposition flags are missing.
-- **Subtitle derivations — prep-stage wiring** — DESIGN.md §Subtitle derivations. Pure-logic operations (`subtract`, `filter`, `ass_to_srt`) all exist for both SRT and ASS, but the prep stage doesn't yet call them on extracted tracks. Last-mile glue, not new algorithms.
-- **Required-field detection** — DESIGN.md §Validation. `audio.tracks` is checked; no general mechanism yet for other conditionally-required fields (e.g., naming template requiring metadata).
-
 ### Configuration
 - **Baked-in defaults layer** — DESIGN.md §Defaults. Defaults layer plumbing exists in `resolve.rs` but the actual default *values* aren't populated; resolution currently relies on a global config being present.
 - **Global config bootstrap template** — DESIGN.md §Bootstrap. Template text in `bootstrap.rs` is comprehensive; **not yet invoked** by any command (waiting on `bento check`).
+- **Required-field detection** — DESIGN.md §Validation. `audio.tracks` is checked; no general mechanism yet for other conditionally-required fields (e.g., naming template requiring metadata).
 
 ---
 
@@ -73,12 +73,7 @@ Features with substantive code in place but missing wiring, edge cases, or the l
 Listed in rough priority order: MVP-completion items first, then UX/control flags, then deferred subcommands.
 
 ### MVP completion (happy path closes once these land)
-- **Output filename naming** (regex capture + template expansion) — DESIGN.md §Naming. Schema is parsed; no evaluation yet.
-- **`preserve_chapters` wiring** — DESIGN.md §Output. Field parsed; not passed to ffmpeg.
-- **`never_upscale` application** — DESIGN.md §Video. Field parsed; not consulted when computing output resolution.
-- **External subtitle tracks (`mux = "external"`)** — DESIGN.md §Subtitles > External subtitle tracks. Writes Jellyfin-compatible sidecar `.srt`/`.ass` files next to the output video, with filenames built from existing per-track metadata (`lang`, `title`, `default`, `forced`, `hearing_impaired`). New feature, not a gap; spec'd but no code yet.
-- **Burn rendering via libass / `-vf subtitles=`** — DESIGN.md §Burn. Filter graph scaffold present but untested end-to-end.
-- **ffmpeg-based subtitle extraction from source MKVs** — DESIGN.md §Pipeline (Extract). Subtitle prep can read external files; track-index extraction from the source container is still missing.
+- **External subtitle tracks (`mux = "external"`)** — DESIGN.md §Subtitles > External subtitle tracks. Writes Jellyfin-compatible sidecar `.srt`/`.ass` files next to the output video, with filenames built from per-track metadata (`lang`, `title`, `default`, `forced`, `hearing_impaired`). `SubtitleMux::External` variant not yet in the enum; no code yet.
 
 ### CLI control & visibility flags
 - `--verbose` / `--quiet` verbosity levels — DESIGN.md §CLI flags.
@@ -114,4 +109,4 @@ Things in the code that don't cleanly map back to DESIGN.md, or design decisions
 
 ---
 
-*Last updated: 2026-05-19. Initial audit based on DESIGN.md and the state of `src/` on branch `claude/optimistic-keller-ae42b2`.*
+*Last updated: 2026-05-19.*

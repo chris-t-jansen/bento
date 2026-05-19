@@ -1,6 +1,7 @@
 //! Encode pipeline: probe, prepare, and invoke ffmpeg.
 
 pub mod ffmpeg_args;
+pub mod naming;
 pub mod probe;
 pub mod subtitle_prep;
 
@@ -13,6 +14,7 @@ use crate::layers::discover_layers;
 use crate::resolve::resolve;
 use crate::validate::{Severity, validate};
 use ffmpeg_args::build_ffmpeg_args;
+use naming::compute_output_stem;
 use probe::{probe_cropdetect, probe_source_streams};
 use subtitle_prep::prepare_subtitles;
 
@@ -154,7 +156,8 @@ fn run_convert_file(
             field: "audio.tracks".to_string(),
         })?;
 
-    let output_path = compute_output_path(input, &resolved.config, output_dir_override)?;
+    let (output_path, episode_number) =
+        compute_output_path(input, &resolved.config, output_dir_override)?;
 
     let on_existing = on_existing_override
         .or(resolved.config.output.on_existing)
@@ -210,6 +213,7 @@ fn run_convert_file(
         &probe,
         &prepared_subs,
         crop_params.as_deref(),
+        episode_number,
     );
 
     writeln!(
@@ -252,19 +256,15 @@ fn compute_output_path(
     input: &Path,
     config: &Config,
     output_dir_override: Option<&Path>,
-) -> Result<PathBuf> {
+) -> Result<(PathBuf, Option<i64>)> {
     let container = config.output.container.unwrap_or(Container::Mp4);
     let extension = match container {
         Container::Mp4 => "mp4",
         Container::Mkv => "mkv",
     };
 
-    let stem = input
-        .file_stem()
-        .ok_or_else(|| Error::PathNotFound(input.to_path_buf()))?;
-    let mut output_name = stem.to_owned();
-    output_name.push(".");
-    output_name.push(extension);
+    let (stem, episode_number) = compute_output_stem(input, config)?;
+    let output_name = format!("{}.{}", stem, extension);
 
     let destination = if let Some(override_path) = output_dir_override {
         override_path.to_path_buf()
@@ -285,5 +285,5 @@ fn compute_output_path(
         })?;
     }
 
-    Ok(destination.join(output_name))
+    Ok((destination.join(output_name), episode_number))
 }

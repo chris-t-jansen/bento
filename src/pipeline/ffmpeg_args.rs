@@ -85,6 +85,7 @@ pub fn build_ffmpeg_args(
     probe: &SourceProbe,
     prepared_subs: &[PreparedSubtitle],
     crop_params: Option<&str>,
+    episode: Option<i64>,
 ) -> Vec<String> {
     let container = config.output.container.unwrap_or(Container::Mp4);
     let normalize_mix = config.audio.normalize_mix.unwrap_or(false);
@@ -320,6 +321,17 @@ pub fn build_ffmpeg_args(
         }
     }
 
+    // Episode number derived from naming regex ("episode" or "ep" capture).
+    // MP4 uses the iTunes `tves` atom; MKV uses the Matroska PART_NUMBER tag.
+    if let Some(ep) = episode {
+        let key = match container {
+            Container::Mp4 => "tves",
+            Container::Mkv => "PART_NUMBER",
+        };
+        args.push("-metadata".into());
+        args.push(format!("{}={}", key, ep));
+    }
+
     // Container
     args.push("-f".into());
     args.push(container.as_ffmpeg_muxer().into());
@@ -396,7 +408,7 @@ fn build_video_filters(
     // Scale / resolution
     if let Some(resolution) = &config.video.resolution {
         if let Resolution::Explicit(r) = resolution {
-            let never_upscale = config.video.never_upscale.unwrap_or(false);
+            let never_upscale = config.video.never_upscale.unwrap_or(true);
             match (r.width, r.height) {
                 (Some(w), Some(h)) if never_upscale => {
                     filters.push(format!(
