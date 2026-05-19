@@ -1,24 +1,37 @@
-//! Subtitle pipeline foundation.
+//! Subtitle pipeline — in-memory representations and pure-logic operations.
 //!
-//! This module is Phase 5a — the SRT-format core. Phase 5 in full brings
-//! ASS support, libass burn-in, ffmpeg-based extraction from source MKVs,
-//! and integration with [`crate::cli::run_convert`]. This file contains the
-//! parts that are pure logic with no I/O and can land independently:
+//! This module covers the I/O-free side of subtitle handling: parsing both
+//! supported wire formats into typed data models, the operations the schema
+//! exposes (`filter`, `subtract_track`, format conversion), and serialization
+//! back out. It deliberately stops short of anything that touches the
+//! filesystem or external processes — those live in [`crate::pipeline`].
 //!
-//! - [`Srt`] / [`SrtEvent`] / [`SrtTime`] — the data model
-//! - [`parse_srt`] — tolerant parser (handles BOM, CRLF/LF, missing index
-//!   numbers, trailing whitespace, multi-line event text)
-//! - [`serialize_srt`] — emit canonical SRT text with sequential indices
-//! - [`subtract_by_timestamp`] — the `subtract_track` operation for SRT
-//!   inputs: drop events whose `(start, end)` pair exactly matches an event
-//!   in another track
+//! Implemented:
 //!
-//! The canonical anime case from DESIGN.md > [subtitles] is "full dialogue
-//! track minus signs-only track = soft dialogue-only track." This module
-//! implements that operation. The remaining wiring — extracting the two
-//! source tracks via ffmpeg, passing the dialogue SRT to HandBrake's
-//! `--srt-file`, and burning the signs ASS track via libass — is the
-//! integration step deferred to Phase 5b.
+//! - **SRT** — [`Srt`] / [`SrtEvent`] / [`SrtTime`] data model;
+//!   [`parse_srt`] (tolerant of BOM, CRLF/LF, missing index numbers, trailing
+//!   whitespace, multi-line event text); [`serialize_srt`] (canonical output
+//!   with sequential indices); [`subtract_by_timestamp`].
+//! - **ASS** — [`Ass`] / [`AssStyle`] / [`AssEvent`] / [`AssTime`] data model;
+//!   [`parse_ass`]; [`serialize_ass`]; [`subtract_ass_by_timestamp`];
+//!   [`filter_ass`] (style/font matching with retain/remove semantics);
+//!   [`ass_to_srt`] (lossy plain-text conversion).
+//!
+//! Not handled here — lives elsewhere in the pipeline:
+//!
+//! - **Extraction** of subtitle tracks from source MKVs via ffmpeg —
+//!   [`crate::pipeline::subtitle_prep`].
+//! - **Burn rendering** of subtitle tracks onto the video stream via libass,
+//!   driven through ffmpeg's `subtitles=` filter.
+//! - **Soft mux** of derived tracks into the output container with their
+//!   declared dispositions (lang, default, forced, etc.).
+//! - **Integration** into the convert command's per-file flow
+//!   ([`crate::cli::run_convert`]).
+//!
+//! The canonical anime case from `DESIGN.md > [subtitles]` is "full dialogue
+//! track minus signs-only track = soft dialogue-only track plus burned signs."
+//! Every operation needed to compute that derivation lives in this module;
+//! the remaining work is wiring it into the ffmpeg invocation.
 
 use std::collections::{HashMap, HashSet};
 
