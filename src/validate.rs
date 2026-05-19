@@ -1,0 +1,667 @@
+//! Cross-field validation of a [`Resolved`] config.
+//!
+//! Validation runs after resolution and checks couplings the structural schema
+//! can't enforce (CRF/codec scaling mismatch, `tune` valid for the resolved
+//! encoder, exactly-one `default = true` per stream type, mutually exclusive
+//! `filter` vs `subtract_track`, etc.).
+//!
+//! The pure-config subset lives here. Validation that requires source probing
+//! (subtitle source format detection) or filesystem I/O (file-path source
+//! existence, extension recognition) is deferred to the encode pipeline.
+//!
+//! Returns a list of [`ValidationIssue`]s sorted into [`Severity::Error`]
+//! (which must be resolved before encoding) and [`Severity::Warning`]
+//! (informational; suppressible per the warnings index).
+
+use crate::config::*;
+use crate::resolve::Resolved;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Severity {
+    Error,
+    Warning,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ValidationIssue {
+    pub severity: Severity,
+    /// Dotted path for context (e.g. `"video.encoder.tune"`); empty if the issue
+    /// spans multiple paths.
+    pub path: String,
+    pub message: String,
+}
+
+impl ValidationIssue {
+    fn error(path: impl Into<String>, msg: impl Into<String>) -> Self {
+        Self {
+            severity: Severity::Error,
+            path: path.into(),
+            message: msg.into(),
+        }
+    }
+
+    fn warning(path: impl Into<String>, msg: impl Into<String>) -> Self {
+        Self {
+            severity: Severity::Warning,
+            path: path.into(),
+            message: msg.into(),
+        }
+    }
+}
+
+/// Run all pure-config validation checks on a resolved configuration.
+pub fn validate(resolved: &Resolved) -> Vec<ValidationIssue> {
+    let mut issues = Vec::new();
+    let cfg = &resolved.config;
+
+    validate_video(&cfg.video, &mut issues);
+    validate_audio(&cfg.audio, &mut issues);
+    validate_subtitles(&cfg.subtitles, cfg.output.container, &mut issues);
+
+    issues
+}
+
+// =============================================================================
+// Video
+// =============================================================================
+
+fn validate_video(video: &Video, issues: &mut Vec<ValidationIssue>) {
+    let Some(enc) = &video.encoder else { return };
+
+    // Tune validity per encoder (x265 doesn't support film/stillimage).
+    if let (Some(name), Some(tune)) = (enc.name, enc.tune) {
+        if matches!((name, tune), (EncoderName::X265, Tune::Film | Tune::Stillimage)) {
+            issues.push(ValidationIssue::error(
+                "video.encoder.tune",
+                format!(
+                    "tune={:?} is not valid for encoder.name=x265. \
+                     x265 supports: animation, grain, psnr, ssim, fastdecode, zerolatency, none.",
+                    tune_str(tune),
+                ),
+            ));
+        }
+    }
+
+    // CRF/codec coupling — suppressible by warn_crf_codec_mismatch.
+    if video.warn_crf_codec_mismatch.unwrap_or(true) {
+        if let (Some(name), Some(crf)) = (enc.name, enc.crf) {
+            let mismatch = match name {
+                EncoderName::X264 if crf >= 24 => Some(format!(
+                    "encoder.crf={} is x265-typical (≥24); resolved encoder.name=x264 \
+                     uses a different scale (transparent ≈18). \
+                     Did you mean encoder.name=\"x265\"?",
+                    crf
+                )),
+                EncoderName::X265 if crf <= 19 => Some(format!(
+                    "encoder.crf={} is x264-typical (≤19); resolved encoder.name=x265 \
+                     uses a different scale (transparent ≈20-22). \
+                     Did you mean encoder.name=\"x264\"?",
+                    crf
+                )),
+                _ => None,
+            };
+            if let Some(msg) = mismatch {
+                issues.push(ValidationIssue::warning("video.encoder.crf", msg));
+            }
+        }
+    }
+}
+
+fn tune_str(t: Tune) -> &'static str {
+    match t {
+        Tune::Film => "film",
+        Tune::Animation => "animation",
+        Tune::Grain => "grain",
+        Tune::Stillimage => "stillimage",
+        Tune::Psnr => "psnr",
+        Tune::Ssim => "ssim",
+        Tune::Fastdecode => "fastdecode",
+        Tune::Zerolatency => "zerolatency",
+        Tune::None => "none",
+    }
+}
+
+// =============================================================================
+// Audio
+// =============================================================================
+
+fn validate_audio(audio: &Audio, issues: &mut Vec<ValidationIssue>) {
+    let Some(tracks) = &audio.tracks else { return };
+
+    // Per-track required field: source. And `source >= 1` since track indices
+    // are 1-based throughout Bento's surface (matching HandBrake / mkvmerge /
+    // VLC user-facing tooling).
+    for (i, track) in tracks.iter().enumerate() {
+        match track.source {
+            None => {
+                issues.push(ValidationIssue::error(
+                    format!("audio.tracks[{}]", i),
+                    "track is missing required field `source` (input track index, 1-based)",
+                ));
+            }
+            Some(0) => {
+                issues.push(ValidationIssue::error(
+                    format!("audio.tracks[{}].source", i),
+                    "`source` must be ≥ 1 — track indices are 1-based; \
+                     the first audio track is `source = 1`",
+                ));
+            }
+            Some(_) => {}
+        }
+    }
+
+    // default uniqueness — hard error.
+    let default_indices: Vec<usize> = tracks
+        .iter()
+        .enumerate()
+        .filter(|(_, t)| t.default == Some(true))
+        .map(|(i, _)| i)
+        .collect();
+
+    if default_indices.len() > 1 {
+        issues.push(ValidationIssue::error(
+            "audio.tracks",
+            format!(
+                "multiple audio tracks have default=true (indices: {:?}); \
+                 at most one allowed per stream type.",
+                default_indices
+            ),
+        ));
+    } else if default_indices.is_empty() && audio.warn_no_default.unwrap_or(true) {
+        issues.push(ValidationIssue::warning(
+            "audio.tracks",
+            "no audio track has default=true; player will fall back to its own \
+             track-selection logic, which may not match user expectation.",
+        ));
+    }
+}
+
+// =============================================================================
+// Subtitles
+// =============================================================================
+
+fn validate_subtitles(subs: &Subtitles, container: Option<Container>, issues: &mut Vec<ValidationIssue>) {
+    let Some(tracks) = &subs.tracks else { return };
+    let effective_container = container.unwrap_or(Container::Mp4);
+
+    // default uniqueness — hard error.
+    let default_indices: Vec<usize> = tracks
+        .iter()
+        .enumerate()
+        .filter(|(_, t)| t.default == Some(true))
+        .map(|(i, _)| i)
+        .collect();
+
+    if default_indices.len() > 1 {
+        issues.push(ValidationIssue::error(
+            "subtitles.tracks",
+            format!(
+                "multiple subtitle tracks have default=true (indices: {:?}); \
+                 at most one allowed per stream type.",
+                default_indices
+            ),
+        ));
+    } else if default_indices.is_empty() && subs.warn_no_default.unwrap_or(true) {
+        issues.push(ValidationIssue::warning(
+            "subtitles.tracks",
+            "no subtitle track has default=true; player will fall back to its own \
+             track-selection logic, which may not match user expectation.",
+        ));
+    }
+
+    // Per-track checks.
+    let mut burn_count = 0;
+    for (i, track) in tracks.iter().enumerate() {
+        let path = format!("subtitles.tracks[{}]", i);
+
+        // Required: source. And `source >= 1` for int-typed sources, since
+        // track indices are 1-based throughout Bento (matching HandBrake /
+        // mkvmerge user-facing tooling). Path-typed sources are unaffected.
+        match &track.source {
+            None => {
+                issues.push(ValidationIssue::error(
+                    &path,
+                    "track is missing required field `source` (input track index or file path, 1-based)",
+                ));
+            }
+            Some(TrackRef::Index(0)) => {
+                issues.push(ValidationIssue::error(
+                    format!("{}.source", path),
+                    "`source` must be ≥ 1 — track indices are 1-based; \
+                     the first subtitle track is `source = 1`",
+                ));
+            }
+            Some(_) => {}
+        }
+
+        // Repeat-subtract: subtract_track is also 1-based when integer-typed.
+        if let Some(TrackRef::Index(0)) = &track.subtract_track {
+            issues.push(ValidationIssue::error(
+                format!("{}.subtract_track", path),
+                "`subtract_track` must be ≥ 1 — track indices are 1-based",
+            ));
+        }
+
+        // filter xor subtract_track — at most one derivation per track.
+        if track.filter.is_some() && track.subtract_track.is_some() {
+            issues.push(ValidationIssue::error(
+                &path,
+                "track has both `filter` and `subtract_track` set; \
+                 at most one derivation operation per track.",
+            ));
+        }
+
+        // ASS soft-mux is only supported in MKV containers; MP4 has no ASS
+        // codec (mov_text is SRT-only). This is a hard error so the user
+        // sees it before waiting for a long encode to fail at mux time.
+        if track.format == Some(SubtitleFormat::Ass)
+            && track.mux != Some(SubtitleMux::Burn)
+            && effective_container == Container::Mp4
+        {
+            issues.push(ValidationIssue::error(
+                &path,
+                "format=\"ass\" mux=\"soft\" is not supported in MP4 containers \
+                 (MP4 uses mov_text, an SRT-only codec). Use container=\"mkv\" \
+                 or change format to \"srt\".",
+            ));
+        }
+
+        // Burn-track-specific checks.
+        if track.mux == Some(SubtitleMux::Burn) {
+            burn_count += 1;
+
+            if subs.warn_burn_metadata.unwrap_or(true) && has_soft_metadata(track) {
+                issues.push(ValidationIssue::warning(
+                    &path,
+                    "burn subtitle track has soft-only metadata fields set \
+                     (lang/title/default/forced/commentary/hearing_impaired); \
+                     burn tracks are pixels and have no metadata channel.",
+                ));
+            }
+        }
+    }
+
+    // Multiple burn tracks — config-implication warning.
+    if burn_count > 1 && subs.warn_multiple_burns.unwrap_or(true) {
+        issues.push(ValidationIssue::warning(
+            "subtitles.tracks",
+            format!(
+                "{} subtitle tracks have mux=\"burn\"; multiple burn layers are \
+                 supported but often a misfire. If intentional, set \
+                 [subtitles].warn_multiple_burns = false to suppress.",
+                burn_count
+            ),
+        ));
+    }
+}
+
+fn has_soft_metadata(track: &SubtitleTrack) -> bool {
+    track.lang.is_some()
+        || track.title.is_some()
+        || track.default.is_some()
+        || track.forced.is_some()
+        || track.commentary.is_some()
+        || track.hearing_impaired.is_some()
+}
+
+// =============================================================================
+// Tests
+// =============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::resolve::{Layer, resolve};
+    use std::path::PathBuf;
+
+    fn parse(s: &str) -> Config {
+        Config::from_toml_str(s).unwrap()
+    }
+
+    fn directory() -> Layer {
+        Layer::Directory(PathBuf::from("/show/bento.toml"))
+    }
+
+    fn check(toml_str: &str) -> Vec<ValidationIssue> {
+        let r = resolve(vec![(directory(), parse(toml_str))]);
+        validate(&r)
+    }
+
+    fn errors(issues: &[ValidationIssue]) -> Vec<&ValidationIssue> {
+        issues.iter().filter(|i| i.severity == Severity::Error).collect()
+    }
+
+    fn warnings(issues: &[ValidationIssue]) -> Vec<&ValidationIssue> {
+        issues.iter().filter(|i| i.severity == Severity::Warning).collect()
+    }
+
+    // --- Tune validity ------------------------------------------------------
+
+    #[test]
+    fn x265_with_film_tune_errors() {
+        let issues = check(r#"
+[video]
+encoder = { name = "x265", crf = 22, tune = "film" }
+"#);
+        let errs = errors(&issues);
+        assert_eq!(errs.len(), 1);
+        assert_eq!(errs[0].path, "video.encoder.tune");
+    }
+
+    #[test]
+    fn x265_with_stillimage_tune_errors() {
+        let issues = check(r#"
+[video]
+encoder = { name = "x265", crf = 22, tune = "stillimage" }
+"#);
+        assert_eq!(errors(&issues).len(), 1);
+    }
+
+    #[test]
+    fn x264_accepts_all_tunes() {
+        for tune in ["film", "animation", "grain", "stillimage", "psnr", "ssim", "fastdecode", "zerolatency", "none"] {
+            let issues = check(&format!(r#"
+[video]
+encoder = {{ name = "x264", crf = 20, tune = "{}" }}
+"#, tune));
+            assert!(errors(&issues).is_empty(), "x264 should accept tune={}", tune);
+        }
+    }
+
+    #[test]
+    fn x265_accepts_animation_grain_etc() {
+        for tune in ["animation", "grain", "psnr", "ssim", "fastdecode", "zerolatency", "none"] {
+            let issues = check(&format!(r#"
+[video]
+encoder = {{ name = "x265", crf = 22, tune = "{}" }}
+"#, tune));
+            assert!(errors(&issues).is_empty(), "x265 should accept tune={}", tune);
+        }
+    }
+
+    // --- CRF/codec coupling -------------------------------------------------
+
+    #[test]
+    fn x265_with_low_crf_warns() {
+        let issues = check(r#"
+[video]
+encoder = { name = "x265", crf = 18 }
+"#);
+        let warns = warnings(&issues);
+        assert!(warns.iter().any(|w| w.path == "video.encoder.crf"));
+    }
+
+    #[test]
+    fn x264_with_high_crf_warns() {
+        let issues = check(r#"
+[video]
+encoder = { name = "x264", crf = 26 }
+"#);
+        let warns = warnings(&issues);
+        assert!(warns.iter().any(|w| w.path == "video.encoder.crf"));
+    }
+
+    #[test]
+    fn crf_warning_suppressed_by_config_field() {
+        let issues = check(r#"
+[video]
+encoder = { name = "x265", crf = 18 }
+warn_crf_codec_mismatch = false
+"#);
+        assert!(!warnings(&issues).iter().any(|w| w.path == "video.encoder.crf"));
+    }
+
+    #[test]
+    fn matched_codec_crf_no_warning() {
+        let issues = check(r#"
+[video]
+encoder = { name = "x265", crf = 22 }
+"#);
+        assert!(!warnings(&issues).iter().any(|w| w.path == "video.encoder.crf"));
+    }
+
+    // --- Audio default uniqueness/absence ----------------------------------
+
+    #[test]
+    fn audio_multiple_defaults_errors() {
+        let issues = check(r#"
+[audio]
+tracks = [
+    { source = 1, lang = "jpn", default = true },
+    { source = 2, lang = "eng", default = true },
+]
+"#);
+        let errs = errors(&issues);
+        assert_eq!(errs.len(), 1);
+        assert_eq!(errs[0].path, "audio.tracks");
+    }
+
+    #[test]
+    fn audio_no_default_warns() {
+        let issues = check(r#"
+[audio]
+tracks = [
+    { source = 1, lang = "jpn" },
+    { source = 2, lang = "eng" },
+]
+"#);
+        let warns = warnings(&issues);
+        assert!(warns.iter().any(|w| w.path == "audio.tracks"));
+    }
+
+    #[test]
+    fn audio_no_default_warning_suppressed() {
+        let issues = check(r#"
+[audio]
+warn_no_default = false
+tracks = [{ source = 1, lang = "jpn" }]
+"#);
+        assert!(!warnings(&issues).iter().any(|w| w.path == "audio.tracks"));
+    }
+
+    #[test]
+    fn audio_one_default_no_issue() {
+        let issues = check(r#"
+[audio]
+tracks = [
+    { source = 1, lang = "jpn", default = true },
+    { source = 2, lang = "eng" },
+]
+"#);
+        assert!(errors(&issues).is_empty());
+        assert!(!warnings(&issues).iter().any(|w| w.path == "audio.tracks"));
+    }
+
+    // --- 1-based source index enforcement (Phase 6d) ----------------------
+
+    #[test]
+    fn audio_source_zero_errors_with_one_based_message() {
+        let issues = check(r#"
+[audio]
+tracks = [
+    { source = 0, lang = "jpn", default = true },
+]
+"#);
+        let errs = errors(&issues);
+        assert!(errs.iter().any(|e| e.path == "audio.tracks[0].source"
+            && e.message.contains("1-based")));
+    }
+
+    #[test]
+    fn subtitles_source_zero_errors_with_one_based_message() {
+        let issues = check(r#"
+[audio]
+tracks = [{ source = 1, lang = "jpn", default = true }]
+
+[subtitles]
+tracks = [
+    { source = 0, format = "srt", mux = "soft", default = true },
+]
+"#);
+        let errs = errors(&issues);
+        assert!(errs.iter().any(|e| e.path == "subtitles.tracks[0].source"
+            && e.message.contains("1-based")));
+    }
+
+    #[test]
+    fn subtitles_subtract_track_zero_errors() {
+        let issues = check(r#"
+[audio]
+tracks = [{ source = 1, lang = "jpn", default = true }]
+
+[subtitles]
+tracks = [
+    { source = 1, format = "srt", mux = "soft", subtract_track = 0, default = true },
+]
+"#);
+        let errs = errors(&issues);
+        assert!(errs.iter().any(|e| e.path == "subtitles.tracks[0].subtract_track"
+            && e.message.contains("1-based")));
+    }
+
+    #[test]
+    fn subtitles_path_typed_source_unaffected_by_range_check() {
+        // Path sources don't have a range; only int sources need to be ≥ 1.
+        let issues = check(r#"
+[audio]
+tracks = [{ source = 1, lang = "jpn", default = true }]
+
+[subtitles]
+tracks = [
+    { source = "edited.srt", format = "srt", mux = "soft", default = true },
+]
+"#);
+        // No source-range error.
+        let errs = errors(&issues);
+        assert!(!errs.iter().any(|e| e.message.contains("≥ 1")));
+    }
+
+    #[test]
+    fn audio_source_one_no_range_error() {
+        let issues = check(r#"
+[audio]
+tracks = [
+    { source = 1, lang = "jpn", default = true },
+    { source = 2, lang = "eng" },
+]
+"#);
+        let errs = errors(&issues);
+        assert!(!errs.iter().any(|e| e.message.contains("≥ 1")));
+    }
+
+    // --- Subtitles per-track checks ----------------------------------------
+
+    #[test]
+    fn subtitles_filter_and_subtract_both_errors() {
+        let issues = check(r#"
+[subtitles]
+tracks = [
+    {
+        source = 1,
+        format = "srt",
+        mux = "soft",
+        filter = { style = "Main", mode = "retain" },
+        subtract_track = 2,
+        default = true,
+    },
+]
+"#);
+        let errs = errors(&issues);
+        assert!(errs.iter().any(|e| e.path == "subtitles.tracks[0]"));
+    }
+
+    #[test]
+    fn subtitles_multiple_default_errors() {
+        let issues = check(r#"
+[subtitles]
+tracks = [
+    { source = 1, format = "srt", mux = "soft", default = true },
+    { source = 2, format = "srt", mux = "soft", default = true },
+]
+"#);
+        let errs = errors(&issues);
+        assert!(errs.iter().any(|e| e.path == "subtitles.tracks"));
+    }
+
+    #[test]
+    fn subtitles_multiple_burns_warns() {
+        let issues = check(r#"
+[subtitles]
+tracks = [
+    { source = 1, format = "ass", mux = "burn" },
+    { source = 2, format = "ass", mux = "burn" },
+    { source = 3, format = "srt", mux = "soft", default = true },
+]
+"#);
+        let warns = warnings(&issues);
+        assert!(warns.iter().any(|w| w.message.contains("subtitle tracks have mux=\"burn\"")));
+    }
+
+    #[test]
+    fn subtitles_multiple_burns_suppressed() {
+        let issues = check(r#"
+[subtitles]
+warn_multiple_burns = false
+tracks = [
+    { source = 1, format = "ass", mux = "burn" },
+    { source = 2, format = "ass", mux = "burn" },
+    { source = 3, format = "srt", mux = "soft", default = true },
+]
+"#);
+        assert!(!warnings(&issues).iter().any(|w| w.message.contains("subtitle tracks have mux=\"burn\"")));
+    }
+
+    #[test]
+    fn subtitles_burn_with_metadata_warns() {
+        let issues = check(r#"
+[subtitles]
+tracks = [
+    { source = 1, format = "ass", mux = "burn", lang = "eng", title = "Signs" },
+    { source = 2, format = "srt", mux = "soft", default = true },
+]
+"#);
+        let warns = warnings(&issues);
+        assert!(warns.iter().any(|w| w.message.contains("burn subtitle track")));
+    }
+
+    #[test]
+    fn subtitles_burn_metadata_suppressed() {
+        let issues = check(r#"
+[subtitles]
+warn_burn_metadata = false
+tracks = [
+    { source = 1, format = "ass", mux = "burn", lang = "eng", title = "Signs" },
+    { source = 2, format = "srt", mux = "soft", default = true },
+]
+"#);
+        assert!(!warnings(&issues).iter().any(|w| w.message.contains("burn subtitle track")));
+    }
+
+    // --- Clean configs produce no errors -----------------------------------
+
+    #[test]
+    fn canonical_anime_episode_config_validates_clean() {
+        let issues = check(r#"
+[output]
+container = "mp4"
+metadata = { show = "Cowboy Bebop", season = 1, year = 1998 }
+
+[video]
+encoder = { name = "x264", crf = 20, tune = "animation" }
+
+[audio]
+tracks = [
+    { source = 1, lang = "jpn", title = "Japanese", default = true, original = true },
+    { source = 2, lang = "eng", title = "English Dub" },
+]
+
+[subtitles]
+tracks = [
+    { source = 1, format = "srt", mux = "soft", subtract_track = 2, lang = "eng", title = "English", default = true },
+    { source = 2, format = "ass", mux = "burn" },
+]
+"#);
+        assert!(errors(&issues).is_empty(), "expected no errors, got: {:?}", errors(&issues));
+        assert!(warnings(&issues).is_empty(), "expected no warnings, got: {:?}", warnings(&issues));
+    }
+}
