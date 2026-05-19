@@ -16,6 +16,8 @@ A secondary motivation is escaping macOS's bundled Bash 3.2, which has driven a 
 
 A note on lineage: while `convert.sh` is the practical antecedent, Bento's schema is being designed **domain-up** rather than ported field-for-field. The script accreted features per show as new edge cases appeared; transferring that shape directly would bake its technical debt into the new tool. Where the script's pipeline shape still makes sense (extract → derive → transcode → mux), it's preserved; where its rigid two-track / one-spoken-output model was too narrow, it's been generalized.
 
+A second note on lineage — on the encoder backend: early Bento prototypes invoked `HandBrakeCLI` for transcode, mirroring `convert.sh`'s split between ffmpeg and HandBrake. That split has since been retired. Bento now drives ffmpeg directly for every encode, mux, and filter operation. HandBrake's CLI surface imposed enough constraints (limited filter composition, opaque error reporting, awkward subtitle handling) that the ffmpeg-native equivalents — `bwdif` for motion-adaptive deinterlacing, `loudnorm` for surround-to-stereo dialogue normalization, `nlmeans` / `hqdn3d` for denoise — were a net win once identified. References elsewhere in this doc reflect the ffmpeg-only model; the HandBrake mention here exists to record the pivot, not the current architecture.
+
 ---
 
 ## Identity
@@ -37,8 +39,7 @@ A note on lineage: while `convert.sh` is the practical antecedent, Bento's schem
   - `serde` + `toml` (≥1.1.x with `+spec-1.1.0` support) — config parsing and (eventually) generation
   - `clap` (derive macros) — CLI parsing and `--help` output
   - `directories` — XDG-compliant config paths across platforms
-  - **ASS subtitle parsing:** `oxideav-ass` is the leading candidate, chosen for its built-in ASS↔SRT conversion helpers, style-reference preservation on dialogue events, and round-trip preservation of override tags. It is very early-stage (v0.0.3 as of this writing); if it proves unstable, fall back to `ass-core` from `wiedymi/ass-rs` and hand-roll the SRT conversion layer.
-  - **SRT parsing:** small enough to hand-roll if needed, or rely on conversion helpers from the chosen ASS crate.
+  - **ASS and SRT parsing:** hand-rolled in `crate::subtitles`. Earlier plan was to use `oxideav-ass` (with `ass-core` as fallback), but the operations Bento actually needs — parse, filter by style, subtract by timestamp, lossy ASS→SRT, canonical serialize — turned out small enough that a dependency wasn't a clear win, and avoiding it sidestepped pinning to an early-stage external (`oxideav-ass` was v0.0.3 at the time of the original write-up). The hand-rolled implementations live alongside their tests in one module.
 
 ---
 
@@ -48,21 +49,19 @@ Bento is distributed via crates.io. Users run `cargo install <crate>` (final cra
 
 A pre-built binary distribution channel (e.g. `cargo-binstall`, GitHub release archives, Homebrew) may be considered later, but is deliberately out of scope for now: requiring users to install a separate tool just to install Bento is friction Bento should avoid unless a compelling reason emerges.
 
-### External dependencies (`ffmpeg`, `HandBrakeCLI`)
+### External dependencies (`ffmpeg`)
 
-These are *not* bundled into the crate. Reasoning:
+Bento depends on `ffmpeg` (and its bundled tools, including `ffprobe`) for all encoding, decoding, probing, and filter operations. It is *not* bundled into the crate. Reasoning:
 
 - crates.io has a per-crate size limit (10 MB default) that makes binary bundling impractical.
 - `cargo install` builds from source, so bundled binaries would require build-script gymnastics.
-- HandBrake is GPL-2.0; redistributing it would impose GPL-compatibility requirements on Bento.
-- `ffmpeg` is LGPL by default but is typically built with GPL components (libx264, libx265).
 
 Instead, Bento uses the **first-run-download pattern** (as used by Playwright, esbuild, and similar tools):
 
-- On first run — or via the `bento check` subcommand — Bento checks for `ffmpeg` and `HandBrakeCLI` on `PATH`.
-- If present, Bento uses them.
-- If missing, Bento downloads platform-appropriate binaries into a cache directory (e.g. `~/.local/share/bento/bin/`) and uses those.
-- Users with existing installations are not forced to download duplicates.
+- On first run — or via the `bento check` subcommand — Bento checks for `ffmpeg` on `PATH`.
+- If present, Bento uses it.
+- If missing, Bento downloads a platform-appropriate binary into a cache directory (e.g. `~/.local/share/bento/bin/`) and uses that.
+- Users with an existing installation are not forced to download a duplicate.
 
 ### Version checking
 
@@ -237,15 +236,15 @@ A single section governing the video stream. Unlike `[audio]` and `[subtitles]`,
   - `crop = "auto"` — autodetect via ffmpeg's `cropdetect` filter on a sample of frames. Convenient but unreliable on dark scenes (over-crops) and on content with intermittent letterboxing.
   - `crop = { top = 138, bottom = 138, left = 0, right = 0 }` — explicit pixel values. Any side may be omitted; absent sides default to 0. So `crop = { left = 138, right = 138 }` is a valid pillarbox-only crop, and `crop = { top = 60, bottom = 60 }` is a valid letterbox-only crop.
 - `deinterlace` — for sources where the *content itself* was shot interlaced (sports, soap operas, pre-progressive broadcasts).
-  - `"none"` (default), `"auto"`, `"yadif"`, or `"decomb"`.
-  - `yadif` is ffmpeg's standard deinterlacer. `decomb` is HandBrake's, with better behavior on mixed-content sources. `auto` lets HandBrake choose.
+  - `"none"` (default), `"auto"`, `"yadif"`, or `"bwdif"`.
+  - `yadif` is ffmpeg's standard deinterlacer. `bwdif` (Bob Weaver Deinterlacing Filter) is ffmpeg's motion-adaptive option and generally behaves better on mixed-content sources — the closest functional analog to HandBrake's old `decomb` filter, which earlier Bento prototypes exposed. `auto` lets Bento pick (currently maps to `yadif`).
 - `detelecine` — inverse telecine (IVTC), for content that was *24fps but broadcast at 30fps via 3:2 pulldown*. Most pre-Blu-ray anime broadcast in NTSC regions falls into this category.
   - `"none"` (default) or `"auto"`.
 - `denoise` — noise reduction. Generally avoid on clean modern sources; useful for old broadcast captures with analog noise.
   - `denoise = "none"` (default).
   - `denoise = { filter = "nlmeans", preset = "light" }` — Non-Local Means filter (higher quality, slower).
   - `denoise = { filter = "hqdn3d", preset = "medium" }` — High-Quality 3D denoiser (faster, less aggressive).
-  - Each filter accepts presets `ultralight`, `light`, `medium`, `strong`, `stronger`, `verystrong`. These pass through to HandBrake; see HandBrake's denoise documentation for the exact picture impact of each preset.
+  - Each filter accepts presets `ultralight`, `light`, `medium`, `strong`, `stronger`, `verystrong`. Bento maps these to the underlying ffmpeg filter's parameter set (filter strength, spatial/temporal weighting); see ffmpeg's `nlmeans` and `hqdn3d` documentation for the exact picture impact at each level.
 - `resolution` — output resolution.
   - `resolution = "original"` (default) — match source dimensions.
   - `resolution = { width = 1280, height = 720 }` — explicit dimensions.
@@ -257,7 +256,7 @@ A single section governing the video stream. Unlike `[audio]` and `[subtitles]`,
 - Pause the source during motion. Combing on every frame → interlaced (use `deinterlace`). Combing on roughly 2 of every 5 frames in a regular pattern → telecined (use `detelecine`).
 - Source framerate of 29.97fps could be either. After successful IVTC, the recovered framerate should be 23.976fps (the original film cadence). If you can't reach 23.976 cleanly, the content wasn't telecined.
 - Era heuristic for anime: pre-Blu-ray broadcast anime is usually telecined (24fps animation broadcast at 30fps NTSC). DVD-era is often telecined, sometimes hard-telecined (pattern baked into the encoding but still recoverable by IVTC). Blu-ray-era anime is usually already progressive 23.976fps with no preprocessing needed.
-- When in doubt, `auto` for the suspected operation does a reasonable job; HandBrake's auto-detection handles the common cases correctly.
+- When in doubt, `auto` for the suspected operation does a reasonable job for the common cases.
 
 **Example: global config:**
 
@@ -297,7 +296,7 @@ A single section governing all audio output. Contains section-level defaults and
 
 **Section-only fields (do not cascade — not per-track concepts):**
 
-- `normalize_mix` — apply HandBrake's `--normalize-mix` to combat quiet-dialogue artifacts in surround-to-stereo downmixes. Default `true` (anime dialogue is the use case).
+- `normalize_mix` — apply ffmpeg's `loudnorm` filter to combat quiet-dialogue artifacts in surround-to-stereo downmixes. Default `true` (anime dialogue is the use case).
 - `warn_no_default` — when `true` (default), Bento warns if no track in the list is marked `default = true`. Without a default, Jellyfin (or whichever player) falls back to its own track-selection logic, which may not match user expectation. Suppressed by setting to `false`.
 
 **Per-track fields:**
@@ -367,7 +366,7 @@ A single section governing all subtitle output. Each track in the list independe
 
 - `source` (required) — either an **integer** (input subtitle track index in the source MKV) or a **string** (path to an external subtitle file). Multiple output tracks can share a source.
 - `format` — output format: `"srt"` or `"ass"`. For soft tracks, this is the encoding of the muxed stream. For burn tracks, this is the data passed to the libass renderer (which in turn determines whether styling is preserved).
-- `mux` — `"soft"` or `"burn"`. Soft tracks are muxed into the output container; burn tracks are rendered onto the video as pixels via libass.
+- `mux` — `"soft"`, `"burn"`, or `"external"`. Soft tracks are muxed into the output container; burn tracks are rendered onto the video as pixels via libass; external tracks are written as sidecar files next to the output video for player-side discovery, targeting Jellyfin's external-track feature. See "External subtitle tracks" below.
 
 **File-path sources:** When `source` is a string, Bento reads the subtitle data from that file rather than extracting it from the input MKV. This supports workflows where users hand-edit a track (fixing typos, rewording, retiming) and want the encode to use the edited version.
 
@@ -399,7 +398,29 @@ A track may have **at most one** of the following derivation operations. Either 
 
 **Multiple-disposition behavior:** Only `default` is uniqueness-enforced. The other dispositions (`forced`, `commentary`, `hearing_impaired`) are category flags, not singletons — multiple tracks may set them. SDH in multiple languages, separate forced tracks for different scene types, and multi-commentary releases all legitimately produce multi-flagged outputs.
 
-These fields apply only to soft tracks. On burn tracks, they have no output effect (burn tracks are pixels, not muxed streams) and Bento warns at config/encode time per `warn_burn_metadata`.
+These fields apply to soft and external tracks. On burn tracks, they have no output effect (burn tracks are pixels, not muxed streams) and Bento warns at config/encode time per `warn_burn_metadata`. On external tracks, `lang`, `title`, `default`, `forced`, and `hearing_impaired` are mapped onto Jellyfin's sidecar filename tokens (see "External subtitle tracks" below); `commentary` has no representation in the filename convention and is dropped.
+
+**External subtitle tracks (`mux = "external"`):**
+
+Writes the derived track as a sidecar file next to the output video rather than into the container or onto the video stream. Targets Jellyfin's [external subtitle and audio tracks](https://jellyfin.org/docs/general/server/media/shows#external-subtitles-and-audio-tracks) feature, in which the player reads sidecar `.srt`/`.ass` files from disk and presents them in the track-selection UI alongside container streams.
+
+The motivation is that external tracks are easier to edit, re-time, or replace after the encode — no remux required — and they sidestep the codec-compatibility constraints of MP4 (which only supports a limited subtitle codec set natively). Soft mux remains the default; external is opt-in for users who specifically want player-side files.
+
+**Filename construction.** Bento builds the sidecar filename from the resolved output video's basename and the track's existing metadata, following Jellyfin's `<basename>.<title?>.<lang?>.<flags?>.<ext>` pattern:
+
+- **Basename** — the output video's basename (per `[output].destination` and `[output].naming`).
+- **`title`** — included verbatim if set; omitted if not.
+- **`lang`** — included as the resolved ISO 639 code if set; omitted if not.
+- **Flags** — derived from per-track booleans: `default = true` → `default`, `forced = true` → `forced`, `hearing_impaired = true` → `sdh`. `sdh` is chosen over Jellyfin's other accepted synonyms (`cc`, `hi`) to sidestep the `hi`-as-Hindi ambiguity called out in Jellyfin's docs.
+- **Extension** — `.srt` or `.ass`, matching the resolved `format`.
+
+For example, a track with `lang = "eng"`, `title = "English"`, `default = true`, `format = "srt"` against output `episode06.mp4` produces `episode06.English.eng.default.srt`.
+
+**Commentary disposition is dropped.** Jellyfin's filename convention has no commentary flag, and Bento doesn't synthesize one — users who want the track labeled as commentary should set `title = "English Commentary"` (or similar) directly. The `commentary` boolean remains valid and effectful on soft tracks; only external ignores it.
+
+**Format conversion**, `filter`, and `subtract_track` all apply to external tracks identically to soft. `warn_ass_to_srt` still fires when `format = "srt"` is requested against an ASS source.
+
+**Overwrite policy and uniqueness.** Sidecars are written into the same directory as the output video. The `[output].on_existing` policy applies to collisions with files left over from previous runs the same way it applies to the main output file. Within a single run, sidecar filename uniqueness is verified at config-validation time alongside the existing `default = true` uniqueness check; two external tracks that would resolve to the same filename is a hard config error.
 
 **Format model:**
 
@@ -511,6 +532,30 @@ tracks = [
 
 The hand-edited file is read directly with no derivation applied (no `filter`, no `subtract_track`); it goes through format conversion if needed and then to soft mux. Because per-file edits are typical in this workflow, the natural place for this kind of override is in a `<videofile>.bento.toml` sidecar config, not the directory-level config.
 
+**Example: external sidecar tracks for Jellyfin direct access.** Same two-track source as the canonical case, but Bento writes the dialogue track as a sidecar `.srt` next to the output video rather than muxing it. Signs stay burned in.
+
+```toml
+[subtitles]
+tracks = [
+    {
+        source = 1,
+        format = "srt",
+        mux = "external",
+        subtract_track = 2,
+        lang = "eng",
+        title = "English",
+        default = true,
+    },
+    {
+        source = 2,
+        format = "ass",
+        mux = "burn",
+    },
+]
+```
+
+If the output video resolves to `episode06.mp4`, Bento writes `episode06.English.eng.default.srt` next to it. Jellyfin picks the file up automatically and exposes it in the track-selection UI alongside any container-internal streams.
+
 ### Runtime concerns are CLI-only
 
 `[pipeline]` was considered and dropped. Items that originally lived there split into two groups:
@@ -526,8 +571,8 @@ The conversion pipeline is no longer a fixed sequence of "extract two specific t
 
 1. **Extract** every input track referenced by `source` in the audio and subtitle config.
 2. **Derive** each output subtitle track per its config: apply `filter` or `subtract_track` as specified, convert format if necessary.
-3. **Transcode** with HandBrakeCLI per the `[video]` and `[audio]` config (multi-track audio supported; video preset/tune/quality/etc.). Burn-mux'd subtitle tracks are rendered into the video stream via libass at this stage.
-4. **Mux** all soft subtitle tracks back into the output container with their declared dispositions.
+3. **Transcode** with ffmpeg per the `[video]` and `[audio]` config (multi-track audio supported; video preset/tune/quality/etc.). Burn-mux'd subtitle tracks are rendered into the video stream via libass at this stage.
+4. **Mux** all soft subtitle tracks back into the output container with their declared dispositions. Tracks with `mux = "external"` are written as sidecar files next to the output video at this stage rather than muxed into the container; the filename follows Jellyfin's external-track convention (see `[subtitles]` > "External subtitle tracks").
 
 ### Subtitle logic: Python → Rust
 
@@ -566,9 +611,9 @@ The primary command — runs the full conversion pipeline.
 
 **Path resolution.** Both positional arguments resolve relative to the current working directory, in contrast with `[output].destination` in config files (which resolves relative to the source file's directory). The mismatch is intentional: CLI args are typed at the shell against tab-completion and shell idioms, while config field values travel with the configs and source files they describe.
 
-**Valid video files.** In directory mode, Bento picks up files by extension whitelist: `.mkv`, `.mp4`, `.m4v`, `.avi`, `.mov`, `.webm`, `.ts`, `.m2ts`, `.wmv`. The whitelist is hardcoded; users with non-standard extensions can invoke `bento convert <specific_file>` directly. No content-probing is done up front — malformed files surface their errors when ffmpeg/HandBrake reaches them, via the per-file error path described below. Sidecar configs (`<videofile>.bento.toml`) and external subtitle files (`.srt`, `.ass`, `.ssa`) are excluded automatically by virtue of not matching the whitelist; no special-case logic needed.
+**Valid video files.** In directory mode, Bento picks up files by extension whitelist: `.mkv`, `.mp4`, `.m4v`, `.avi`, `.mov`, `.webm`, `.ts`, `.m2ts`, `.wmv`. The whitelist is hardcoded; users with non-standard extensions can invoke `bento convert <specific_file>` directly. No content-probing is done up front — malformed files surface their errors when ffmpeg reaches them, via the per-file error path described below. Sidecar configs (`<videofile>.bento.toml`) and external subtitle files (`.srt`, `.ass`, `.ssa`) are excluded automatically by virtue of not matching the whitelist; no special-case logic needed.
 
-**Batch failure semantics.** Files in a directory are processed sequentially. Per-file errors (config validation failure, source unreadable, ffmpeg/HandBrake non-zero exit) are logged and the batch continues with the next file. Environmental errors that would affect every remaining file (missing external binary, disk full, root output dir unwritable) abort the run. At the end of the batch, Bento prints a summary:
+**Batch failure semantics.** Files in a directory are processed sequentially. Per-file errors (config validation failure, source unreadable, ffmpeg non-zero exit) are logged and the batch continues with the next file. Environmental errors that would affect every remaining file (missing external binary, disk full, root output dir unwritable) abort the run. At the end of the batch, Bento prints a summary:
 
 ```
 8 succeeded, 2 failed:
@@ -590,7 +635,7 @@ If `<path>` is a directory, resolves and prints for every valid video file in th
 
 Usage: `bento check [-y]`
 
-Verifies that Bento's external dependencies are present and usable: `ffmpeg`, `HandBrakeCLI`, and the global `config.toml`. If any are missing, offers via prompt to install or generate them. This is the same logic that runs implicitly on first use of Bento; `check` is the explicit re-entry point after the user has accidentally deleted a binary, broken their global config, etc.
+Verifies that Bento's external dependencies are present and usable: `ffmpeg` and the global `config.toml`. If either is missing, offers via prompt to install or generate it. This is the same logic that runs implicitly on first use of Bento; `check` is the explicit re-entry point after the user has accidentally deleted the binary, broken their global config, etc.
 
 The `-y` / `--yes` flag auto-confirms all install/generate prompts. In non-interactive contexts (no TTY) without `-y`, `check` errors instead of hanging — matching the behavior of `apt`, `dnf`, etc.
 
@@ -659,7 +704,7 @@ The unique value of `--dry-run` over `bento config` is source-aware decisions: c
 
 Validation errors surface during dry-run and contribute to a non-zero exit code — catching unresolvable required fields, suspected codec/CRF mismatches, etc. before committing to a multi-hour encode is the point of the flag.
 
-Under `--generate-config`, `--dry-run` reports "Would write sidecar at <path>" but does not write — preserving the no-filesystem-effects contract. Under `-v`, `--dry-run` additionally prints the actual ffmpeg/HandBrake command lines that would run.
+Under `--generate-config`, `--dry-run` reports "Would write sidecar at <path>" but does not write — preserving the no-filesystem-effects contract. Under `-v`, `--dry-run` additionally prints the actual ffmpeg command lines that would run.
 
 #### `--keep-intermediates`
 
@@ -695,7 +740,7 @@ Three discrete levels. `--verbose` and `--quiet` are mutually exclusive; passing
 |---|---|---|---|---|---|
 | `--quiet` / `-q` | yes | yes | none | none | none |
 | (default) | yes | yes | layer-count summary line | brief Bento-styled line, in-place if TTY | none |
-| `--verbose` / `-v` | yes | yes | full provenance table | full HandBrake/ffmpeg passthrough | command lines per file |
+| `--verbose` / `-v` | yes | yes | full provenance table | full ffmpeg passthrough | command lines per file |
 
 A few things worth pinning:
 
@@ -761,18 +806,18 @@ These are minor surface and don't warrant a dedicated design pass; ad-hoc resolu
 - **Wrong-directory protection.** Pointing `bento convert` at the wrong directory — most concerningly, a previous run's output directory — can cause silent re-encoding of already-finished files: wasted time and irrecoverable quality loss with no way to tell once-encoded from twice-encoded files after the fact. Candidates considered: per-output metadata stamps with input-side detection (most targeted, but interacts poorly with same-container iterative-settings workflows where users *want* to re-encode their previous outputs); confirmation prompts for directory mode (heavyweight, trains users into reflexive `-y`); pre-flight summary lines (loud but not blocking); input-side extension filters (orthogonal — solves a different mistake). No clear winner; revisit when more user-facing data is in.
 - **Per-subcommand niceties.** `--output FILE` for `bento config` and any analogous output-redirection flags. Minor surface, ad-hoc during implementation.
 - **Crate name on crates.io.** Pending availability check and personal preference.
-- **Final ASS parser choice.** `oxideav-ass` is the working choice; revisit if it proves unstable.
-- **Exact pinned-minimum versions for `ffmpeg` and `HandBrakeCLI`.** Determined empirically.
+- **Exact pinned-minimum version for `ffmpeg`.** Determined empirically.
 - **Behavior of the default summary line** — whether it's truly default-on, or behind a flag. Currently planned as default-on.
 - **Pre-built binary distribution.** Deliberately deferred; revisit only if a compelling reason emerges.
-- **External-binary cache update mechanism.** First-run download is settled; updating cached binaries (e.g. `bento check --refresh`) is deferred. "Download once and leave alone" is fine for v1; users with `ffmpeg`/`HandBrakeCLI` on their `PATH` are unaffected either way.
+- **External audio tracks.** Jellyfin's external-track feature also supports sidecar audio (`.mp3`, `.aac`, `.dts`, etc.) using the same filename convention as external subtitles. Adding `mux = "external"` to `[audio]` would be symmetric with the subtitle case (already in the schema for `[subtitles]`) and could reuse the same filename construction. Deferred from v1: the canonical anime use case is well-served by muxed audio, and the surrounding design questions (transcode targets for external streams, source-stream copy semantics, interaction with `force_bitrate` / `force_mixdown`) didn't have clear answers under the same time budget. Revisit if a real use case emerges; the schema delta is small.
+- **External-binary cache update mechanism.** First-run download is settled; updating cached binaries (e.g. `bento check --refresh`) is deferred. "Download once and leave alone" is fine for v1; users with `ffmpeg` on their `PATH` are unaffected either way.
 - **Resolved-config data shape.** Internally, every settable field is `Option<T>` at every layer until resolution; after resolution, fields-with-defaults could be guaranteed non-None and represented as `T`, pushing the "is this set?" question into the type system and removing `.unwrap_or(default)` calls scattered through the encoder builder. Truly required no-default fields stay `Option<T>` until the missing-field check fires. The cost is a parallel `ResolvedConfig` type maintained alongside the layer-level `Config`. Deferred until the encoder builder stabilizes — the call-site shape will be clearer then, and the `.unwrap_or` pattern is annoying but not broken in the meantime.
 
 ---
 
 ## Out of Scope (for now)
 
-- Bundling `ffmpeg` / `HandBrake` into the crate. Explicitly rejected; first-run download is the path forward.
+- Bundling `ffmpeg` into the crate. Explicitly rejected; first-run download is the path forward.
 - Hardware-accelerated encoding (NVENC, QuickSync, VideoToolbox). Not relevant to current goals; could be added later.
 - Recursive directory traversal. Current script is non-recursive; no reason to change that yet.
 - A daemon/watch mode. Out of scope.
