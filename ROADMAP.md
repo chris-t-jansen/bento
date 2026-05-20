@@ -37,6 +37,7 @@ Foundation pieces that are working end-to-end. Most have at least light test cov
 - `bento convert <path> [output_dir]` for both single-file and directory mode — DESIGN.md §CLI.
 - `bento config <path>` resolves and prints config with per-layer provenance — DESIGN.md §CLI. (`render.rs`.)
 - `bento check [-y]` — DESIGN.md §`bento check`. Verifies global config (bootstrap if missing, prompt or `-y` auto-confirm) and detects `ffmpeg`/`ffprobe` on PATH with version-band checking (below minimum → warn loudly; same major as tested or between → silent; above tested major → note). Exits non-zero if either binary is missing. (`cli.rs`, `ffmpeg.rs`, `layers.rs`.)
+- `--no-warn-X` family + `--no-warnings` — DESIGN.md §Warning suppression. All 8 flags wired: `--no-warn-multiple-burns`, `--no-warn-burn-metadata`, `--no-warn-ass-to-srt`, `--no-warn-no-default` (suppresses both audio and subtitles), `--no-warn-crf-codec-mismatch`, `--no-warn-missing` and `--no-warn-redundant` (placeholders for unimplemented warnings), and `--no-warnings` bulk flag. CLI flags override resolved config `warn_*` fields via `apply_warn_overrides` called after resolution and before validation. (`cli.rs`, `pipeline/mod.rs`; 6 new integration tests.)
 - `--overwrite` / `-f` shorthand and `--on-existing={warn,skip-silently,overwrite,fail}` — DESIGN.md §CLI flags.
 - `--verbose` / `-v` and `--quiet` / `-q` verbosity flags — DESIGN.md §CLI flags. (`cli.rs`, `verbosity.rs`.)
 - `--dry-run` / `-n` plan-without-encode mode — DESIGN.md §CLI flags. Resolves config, probes sources, and prints the per-file encode plan with no filesystem effects; summary shows "N files would be processed. M errors." with a `bento config` discovery footer. (`cli.rs`, `pipeline/mod.rs`, `pipeline/ffmpeg_args.rs`.)
@@ -79,7 +80,6 @@ Features with substantive code in place but missing wiring, edge cases, or the l
 Listed in rough priority order: MVP-completion items first, then UX/control flags, then deferred subcommands.
 
 ### CLI control & visibility flags
-- `--no-warn-X` family + `--no-warnings` suppression flags — DESIGN.md §Warning suppression.
 - `--keep-intermediates` to preserve the temp dir — DESIGN.md §CLI flags.
 - `--generate-config` to write a sidecar capturing CLI overrides — DESIGN.md §Sidecar generation.
 - `--set KEY=VALUE` generic dotted-path overrides — DESIGN.md §CLI flags.
@@ -109,4 +109,4 @@ Things in the code that don't cleanly map back to DESIGN.md, or design decisions
 
 ---
 
-*Last updated: 2026-05-20. Session: completed `bento check` — ffmpeg/ffprobe presence detection and version banding. Detects binaries via `{name} -version`, resolves path via `which`, parses version string (handles package suffixes like `-0ubuntu0.22.04.1`), and applies the four-band warning table from DESIGN.md (below minimum → warn loudly, in-range → silent, above tested major → note). Exits non-zero if either binary is missing. New `src/ffmpeg.rs` module with 10 unit tests covering version parsing, banding, display, and ordering.*
+*Last updated: 2026-05-20. Session: implemented `--no-warn-X` / `--no-warnings` suppression flags. Added `WarnFlags` struct to `pipeline/mod.rs`, threaded through `run_convert` → `run_convert_directory` → `run_convert_file`, applied via `apply_warn_overrides` (mutates resolved config warn fields before validation). All 8 flags wired in `cli.rs`. 6 new integration tests verify per-flag and bulk suppression. 195 tests total, all passing.*

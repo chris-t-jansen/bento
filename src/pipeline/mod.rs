@@ -25,6 +25,25 @@ use naming::compute_output_stem;
 use probe::{probe_cropdetect, probe_source_streams};
 use subtitle_prep::{prepare_subtitles, write_external_sidecars};
 
+/// CLI-level warning suppressions, applied on top of the resolved config's
+/// `warn_*` fields.  Constructed from `--no-warn-X` / `--no-warnings` flags
+/// and passed into `run_convert`.  `Default` is all-false (nothing suppressed).
+#[derive(Debug, Default, Clone, Copy)]
+pub struct WarnFlags {
+    pub no_warn_multiple_burns: bool,
+    pub no_warn_burn_metadata: bool,
+    pub no_warn_ass_to_srt: bool,
+    /// Suppresses both `[audio].warn_no_default` and `[subtitles].warn_no_default`.
+    pub no_warn_no_default: bool,
+    pub no_warn_crf_codec_mismatch: bool,
+    /// Placeholder — missing-setting warnings not yet emitted.
+    pub no_warn_missing: bool,
+    /// Placeholder — redundant-override warnings not yet emitted.
+    pub no_warn_redundant: bool,
+    /// Bulk flag: equivalent to setting every individual flag above.
+    pub no_warnings: bool,
+}
+
 pub const VIDEO_EXTENSIONS: &[&str] = &[
     "mkv", "mp4", "m4v", "avi", "mov", "webm", "ts", "m2ts", "wmv",
 ];
@@ -42,6 +61,7 @@ pub fn run_convert(
     on_existing_override: Option<OnExisting>,
     dry_run: bool,
     verbosity: Verbosity,
+    warn_flags: WarnFlags,
     out: &mut dyn Write,
 ) -> Result<()> {
     if !input.exists() {
@@ -54,6 +74,7 @@ pub fn run_convert(
             on_existing_override,
             dry_run,
             verbosity,
+            warn_flags,
             out,
         );
     }
@@ -71,6 +92,7 @@ pub fn run_convert(
         on_existing_override,
         dry_run,
         verbosity,
+        warn_flags,
         out,
     );
 
@@ -99,6 +121,7 @@ fn run_convert_directory(
     on_existing_override: Option<OnExisting>,
     dry_run: bool,
     verbosity: Verbosity,
+    warn_flags: WarnFlags,
     out: &mut dyn Write,
 ) -> Result<()> {
     let mut files: Vec<PathBuf> = std::fs::read_dir(input_dir)
@@ -133,6 +156,7 @@ fn run_convert_directory(
             on_existing_override,
             dry_run,
             verbosity,
+            warn_flags,
             out,
         ) {
             Ok(()) => succeeded.push(file.clone()),
@@ -172,6 +196,7 @@ fn run_convert_file(
     on_existing_override: Option<OnExisting>,
     dry_run: bool,
     verbosity: Verbosity,
+    warn_flags: WarnFlags,
     out: &mut dyn Write,
 ) -> Result<()> {
     // input_name is used in the layer-count summary and throughout; compute early.
@@ -182,7 +207,8 @@ fn run_convert_file(
 
     // --- Config resolution and validation ------------------------------------
     let layers = discover_layers(input, out)?;
-    let resolved = resolve(layers);
+    let mut resolved = resolve(layers);
+    apply_warn_overrides(&mut resolved.config, warn_flags);
     let issues = validate(&resolved);
 
     let error_count = issues
@@ -376,6 +402,30 @@ fn run_convert_file(
 
     progress.finish_ok();
     Ok(())
+}
+
+/// Apply CLI-level warn flag overrides to the resolved config.  Called after
+/// resolution and before validation so every warning check sees the final state.
+fn apply_warn_overrides(config: &mut Config, flags: WarnFlags) {
+    let suppress_all = flags.no_warnings;
+    if suppress_all || flags.no_warn_multiple_burns {
+        config.subtitles.warn_multiple_burns = Some(false);
+    }
+    if suppress_all || flags.no_warn_burn_metadata {
+        config.subtitles.warn_burn_metadata = Some(false);
+    }
+    if suppress_all || flags.no_warn_ass_to_srt {
+        config.subtitles.warn_ass_to_srt = Some(false);
+    }
+    if suppress_all || flags.no_warn_no_default {
+        config.audio.warn_no_default = Some(false);
+        config.subtitles.warn_no_default = Some(false);
+    }
+    if suppress_all || flags.no_warn_crf_codec_mismatch {
+        config.video.warn_crf_codec_mismatch = Some(false);
+    }
+    // no_warn_missing and no_warn_redundant are accepted but currently no-ops:
+    // those runtime warnings are not yet emitted.
 }
 
 fn run_ffmpeg_encode(
