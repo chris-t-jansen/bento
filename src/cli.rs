@@ -133,10 +133,77 @@ pub fn run_check(yes: bool, out: &mut dyn Write) -> Result<()> {
     crate::layers::ensure_global_config(&path, yes, out)?;
 
     writeln!(out).map_err(crate::io_render_err)?;
-    writeln!(
-        out,
-        "(External binary check for ffmpeg will be added in a later release.)"
-    )
-    .map_err(crate::io_render_err)?;
+
+    let mut failures = 0usize;
+    for name in &["ffmpeg", "ffprobe"] {
+        if !check_binary(name, out)? {
+            failures += 1;
+        }
+        writeln!(out).map_err(crate::io_render_err)?;
+    }
+
+    if failures > 0 {
+        return Err(Error::CheckFailed { count: failures });
+    }
+    Ok(())
+}
+
+fn check_binary(name: &'static str, out: &mut dyn Write) -> Result<bool> {
+    use crate::ffmpeg::{VersionBand, detect};
+
+    match detect(name) {
+        None => {
+            writeln!(out, "{name}: not found").map_err(crate::io_render_err)?;
+            write_install_hint(name, out)?;
+            Ok(false)
+        }
+        Some(bin) => {
+            let ver_str = bin
+                .version
+                .map(|v| format!(" ({v})"))
+                .unwrap_or_default();
+
+            let band = bin.version.map(|v| v.band());
+
+            match band {
+                Some(VersionBand::BelowMinimum) => {
+                    writeln!(out, "{name}: warning — version{ver_str} is below the required minimum ({min})", min = crate::ffmpeg::MINIMUM)
+                        .map_err(crate::io_render_err)?;
+                    if let Some(p) = &bin.path {
+                        writeln!(out, "  {}", p.display()).map_err(crate::io_render_err)?;
+                    }
+                    writeln!(out, "  Bento may not work correctly. Please upgrade to {name} {} or later.", crate::ffmpeg::MINIMUM)
+                        .map_err(crate::io_render_err)?;
+                }
+                Some(VersionBand::AboveTestedMajor) => {
+                    writeln!(out, "{name}: ok{ver_str}").map_err(crate::io_render_err)?;
+                    if let Some(p) = &bin.path {
+                        writeln!(out, "  {}", p.display()).map_err(crate::io_render_err)?;
+                    }
+                    writeln!(out, "  note: version is above the tested release ({major}.x); behavior may differ", major = crate::ffmpeg::TESTED.major)
+                        .map_err(crate::io_render_err)?;
+                }
+                Some(VersionBand::Ok) | None => {
+                    writeln!(out, "{name}: ok{ver_str}").map_err(crate::io_render_err)?;
+                    if let Some(p) = &bin.path {
+                        writeln!(out, "  {}", p.display()).map_err(crate::io_render_err)?;
+                    }
+                }
+            }
+            Ok(true)
+        }
+    }
+}
+
+fn write_install_hint(name: &str, out: &mut dyn Write) -> Result<()> {
+    writeln!(out, "  Install {name} to use Bento:").map_err(crate::io_render_err)?;
+    #[cfg(target_os = "macos")]
+    writeln!(out, "    brew install ffmpeg").map_err(crate::io_render_err)?;
+    #[cfg(target_os = "linux")]
+    {
+        writeln!(out, "    apt install ffmpeg   (Debian/Ubuntu)").map_err(crate::io_render_err)?;
+        writeln!(out, "    dnf install ffmpeg   (Fedora/RHEL)").map_err(crate::io_render_err)?;
+    }
+    writeln!(out, "    https://ffmpeg.org/download.html").map_err(crate::io_render_err)?;
     Ok(())
 }

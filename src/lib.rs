@@ -2,6 +2,7 @@ pub mod bootstrap;
 pub mod cli;
 pub mod config;
 pub mod error;
+pub mod ffmpeg;
 pub mod layers;
 pub mod pipeline;
 pub mod progress;
