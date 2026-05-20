@@ -10,14 +10,17 @@ use std::path::{Path, PathBuf};
 
 use console::style;
 
-use crate::config::{Config, Container, OnExisting};
+use crate::config::{
+    Config, Container, Crop, CropMode, DeinterlaceMode, DetelecineMode, Denoise, OnExisting,
+    SubtitleMux, SubtitleTrack, TrackRef,
+};
 use crate::error::{Error, Result};
 use crate::layers::discover_layers;
 use crate::progress::FileProgress;
 use crate::resolve::resolve;
 use crate::validate::{Severity, validate};
 use crate::verbosity::Verbosity;
-use ffmpeg_args::build_ffmpeg_args;
+use ffmpeg_args::{AudioAction, build_ffmpeg_args, decide_audio_action};
 use naming::compute_output_stem;
 use probe::{probe_cropdetect, probe_source_streams};
 use subtitle_prep::{prepare_subtitles, write_external_sidecars};
@@ -37,6 +40,7 @@ pub fn run_convert(
     input: &Path,
     output_dir_override: Option<&Path>,
     on_existing_override: Option<OnExisting>,
+    dry_run: bool,
     verbosity: Verbosity,
     out: &mut dyn Write,
 ) -> Result<()> {
@@ -48,32 +52,44 @@ pub fn run_convert(
             input,
             output_dir_override,
             on_existing_override,
+            dry_run,
             verbosity,
             out,
         );
     }
 
     // Single-file: print a unified header (same style as the directory path),
-    // then run, then always print the summary (per user request — it's the
-    // "Bento is finished" signifier even for a single file). Environmental
-    // errors (ffmpeg not found) skip the summary since it wouldn't be meaningful.
+    // then run, then always print the summary.
     let input_dir = input.parent().unwrap_or_else(|| Path::new("."));
-    print_convert_header(input_dir, &[input.to_path_buf()], out)?;
+    print_convert_header(input_dir, &[input.to_path_buf()], dry_run, out)?;
 
-    let result =
-        run_convert_file(input, 1, 1, output_dir_override, on_existing_override, verbosity, out);
+    let result = run_convert_file(
+        input,
+        1,
+        1,
+        output_dir_override,
+        on_existing_override,
+        dry_run,
+        verbosity,
+        out,
+    );
 
-    // Build a one-element failed list (or empty on success) for the summary.
     match &result {
         Err(e) if matches!(e, Error::FfmpegNotFound) => return result,
         _ => {}
     }
-    let failed: Vec<(PathBuf, String)> = match &result {
-        Ok(()) => vec![],
-        Err(e) => vec![(input.to_path_buf(), e.to_string())],
-    };
-    let succeeded = if failed.is_empty() { 1 } else { 0 };
-    print_batch_summary(succeeded, &failed, out)?;
+
+    if dry_run {
+        let error_count = if result.is_err() { 1 } else { 0 };
+        print_dry_run_summary(input, 1, error_count, verbosity, out)?;
+    } else {
+        let failed: Vec<(PathBuf, String)> = match &result {
+            Ok(()) => vec![],
+            Err(e) => vec![(input.to_path_buf(), e.to_string())],
+        };
+        let succeeded = if failed.is_empty() { 1 } else { 0 };
+        print_batch_summary(succeeded, &failed, out)?;
+    }
     result
 }
 
@@ -81,6 +97,7 @@ fn run_convert_directory(
     input_dir: &Path,
     output_dir_override: Option<&Path>,
     on_existing_override: Option<OnExisting>,
+    dry_run: bool,
     verbosity: Verbosity,
     out: &mut dyn Write,
 ) -> Result<()> {
@@ -101,8 +118,7 @@ fn run_convert_directory(
         return Ok(());
     }
 
-    // Header: show what Bento is about to process before any encode starts.
-    print_convert_header(input_dir, &files, out)?;
+    print_convert_header(input_dir, &files, dry_run, out)?;
 
     let file_count = files.len();
     let mut succeeded: Vec<PathBuf> = Vec::new();
@@ -115,6 +131,7 @@ fn run_convert_directory(
             file_count,
             output_dir_override,
             on_existing_override,
+            dry_run,
             verbosity,
             out,
         ) {
@@ -124,14 +141,20 @@ fn run_convert_directory(
                     return Err(e);
                 }
                 let msg = e.to_string();
-                writeln!(out, "[error] {}: {}", file.display(), msg)
-                    .map_err(crate::io_render_err)?;
+                if !dry_run {
+                    writeln!(out, "[error] {}: {}", file.display(), msg)
+                        .map_err(crate::io_render_err)?;
+                }
                 failed.push((file.clone(), msg));
             }
         }
     }
 
-    print_batch_summary(succeeded.len(), &failed, out)?;
+    if dry_run {
+        print_dry_run_summary(input_dir, file_count, failed.len(), verbosity, out)?;
+    } else {
+        print_batch_summary(succeeded.len(), &failed, out)?;
+    }
 
     if !failed.is_empty() {
         return Err(Error::BatchFailed {
@@ -147,6 +170,7 @@ fn run_convert_file(
     file_count: usize,
     output_dir_override: Option<&Path>,
     on_existing_override: Option<OnExisting>,
+    dry_run: bool,
     verbosity: Verbosity,
     out: &mut dyn Write,
 ) -> Result<()> {
@@ -213,8 +237,10 @@ fn run_convert_file(
     };
 
     // --- Output path and on_existing resolution ------------------------------
+    // In dry-run mode we compute the path but skip creating the destination
+    // directory — no filesystem effects allowed.
     let (output_path, episode_number) =
-        compute_output_path(input, &resolved.config, output_dir_override)?;
+        compute_output_path(input, &resolved.config, output_dir_override, dry_run)?;
 
     let on_existing = on_existing_override
         .or(resolved.config.output.on_existing)
@@ -224,6 +250,25 @@ fn run_convert_file(
         .file_name()
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|| output_path.display().to_string());
+
+    // Dry-run: probe the source (needed for copy-vs-transcode decisions), print
+    // the plan, then return.  We never touch the output path or create a temp dir.
+    if dry_run {
+        let probe = probe_source_streams(input)?;
+        let output_exists = output_path.exists();
+        print_dry_run_plan(
+            &input_name,
+            &output_path,
+            output_exists,
+            on_existing,
+            &resolved.config,
+            &probe,
+            episode_number,
+            verbosity,
+            out,
+        )?;
+        return Ok(());
+    }
 
     if output_path.exists() {
         match on_existing {
@@ -469,12 +514,14 @@ fn map_ffmpeg_spawn_err(e: std::io::Error) -> Error {
 fn print_convert_header(
     input_dir: &Path,
     files: &[PathBuf],
+    dry_run: bool,
     out: &mut dyn Write,
 ) -> Result<()> {
+    let verb = if dry_run { "Dry-run for" } else { "Converting" };
     writeln!(
         out,
         "{} {} {}",
-        style("Converting").bold(),
+        style(verb).bold(),
         files.len(),
         style(format!(
             "file{} in {}:",
@@ -522,10 +569,435 @@ fn print_batch_summary(
     Ok(())
 }
 
+/// Print the dry-run plan for one file: what Bento would do if `--dry-run`
+/// were not passed.  Probes are already done by the caller; no files are
+/// written here.
+#[allow(clippy::too_many_arguments)]
+fn print_dry_run_plan(
+    input_name: &str,
+    output_path: &Path,
+    output_exists: bool,
+    on_existing: OnExisting,
+    config: &Config,
+    probe: &probe::SourceProbe,
+    episode_number: Option<i64>,
+    verbosity: Verbosity,
+    out: &mut dyn Write,
+) -> Result<()> {
+    use std::collections::BTreeSet;
+
+    use crate::config::{EncoderName, Resolution, SubtitleFormat, Tune};
+
+    writeln!(out, "{}:", input_name).map_err(crate::io_render_err)?;
+
+    // --- Subtitles -----------------------------------------------------------
+    if let Some(tracks) = &config.subtitles.tracks {
+        if !tracks.is_empty() {
+            // Unique source-MKV track indices that need extraction.
+            let mut extract: BTreeSet<u32> = BTreeSet::new();
+            for t in tracks {
+                if let Some(TrackRef::Index(i)) = &t.source {
+                    extract.insert(*i);
+                }
+                if let Some(TrackRef::Index(i)) = &t.subtract_track {
+                    extract.insert(*i);
+                }
+            }
+            if !extract.is_empty() {
+                let idx_str = extract.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(", ");
+                writeln!(
+                    out,
+                    "  Would extract subtitle track{} {} from source.",
+                    if extract.len() == 1 { "" } else { "s" },
+                    idx_str,
+                )
+                .map_err(crate::io_render_err)?;
+            }
+
+            let soft_ext: Vec<&SubtitleTrack> = tracks
+                .iter()
+                .filter(|t| matches!(t.mux, Some(SubtitleMux::Soft) | Some(SubtitleMux::External)))
+                .collect();
+            let burns: Vec<&SubtitleTrack> = tracks
+                .iter()
+                .filter(|t| matches!(t.mux, Some(SubtitleMux::Burn)))
+                .collect();
+
+            if !soft_ext.is_empty() {
+                let n = soft_ext.len();
+                let any_ext = soft_ext.iter().any(|t| matches!(t.mux, Some(SubtitleMux::External)));
+                let any_soft = soft_ext.iter().any(|t| matches!(t.mux, Some(SubtitleMux::Soft)));
+                let kind = match (any_soft, any_ext) {
+                    (true, true) => "soft/external subtitle",
+                    (false, true) => "external subtitle",
+                    _ => "soft subtitle",
+                };
+                writeln!(
+                    out,
+                    "  Would derive {} {} track{}:",
+                    n,
+                    kind,
+                    if n == 1 { "" } else { "s" },
+                )
+                .map_err(crate::io_render_err)?;
+                for t in &soft_ext {
+                    let label = sub_track_label(t);
+                    let deriv = sub_derivation(t);
+                    let fmt = match t.format {
+                        Some(SubtitleFormat::Srt) => "srt",
+                        Some(SubtitleFormat::Ass) => "ass",
+                        None => "auto",
+                    };
+                    let mut flags: Vec<&str> = Vec::new();
+                    if t.default == Some(true) {
+                        flags.push("default=true");
+                    }
+                    if t.forced == Some(true) {
+                        flags.push("forced=true");
+                    }
+                    if t.hearing_impaired == Some(true) {
+                        flags.push("sdh");
+                    }
+                    if t.commentary == Some(true) {
+                        flags.push("commentary");
+                    }
+                    let flag_str = if flags.is_empty() {
+                        String::new()
+                    } else {
+                        format!(", {}", flags.join(", "))
+                    };
+                    let ext_tag = if matches!(t.mux, Some(SubtitleMux::External)) {
+                        " [external]"
+                    } else {
+                        ""
+                    };
+                    writeln!(
+                        out,
+                        "    {}: {}, format={}{}{}",
+                        label, deriv, fmt, flag_str, ext_tag,
+                    )
+                    .map_err(crate::io_render_err)?;
+                }
+            }
+
+            if !burns.is_empty() {
+                let n = burns.len();
+                writeln!(
+                    out,
+                    "  Would burn {} subtitle track{}:",
+                    n,
+                    if n == 1 { "" } else { "s" },
+                )
+                .map_err(crate::io_render_err)?;
+                for t in &burns {
+                    let deriv = sub_derivation(t);
+                    let fmt_suffix = match t.format {
+                        Some(SubtitleFormat::Ass) => " (ass)",
+                        _ => "",
+                    };
+                    writeln!(out, "    {}{} onto video.", deriv, fmt_suffix)
+                        .map_err(crate::io_render_err)?;
+                }
+            }
+        }
+    }
+
+    // --- Video ---------------------------------------------------------------
+    {
+        let enc = config.video.encoder.as_ref();
+        let name = enc
+            .and_then(|e| e.name)
+            .map(|n| match n {
+                EncoderName::X264 => "x264",
+                EncoderName::X265 => "x265",
+            })
+            .unwrap_or("x264");
+        let crf = enc.and_then(|e| e.crf).unwrap_or(20);
+        let tune_str = enc
+            .and_then(|e| e.tune)
+            .filter(|t| !matches!(t, Tune::None))
+            .map(|t| format!(" tune={}", t))
+            .unwrap_or_default();
+        let preset_str = config
+            .video
+            .preset
+            .map(|p| format!(" preset={}", p))
+            .unwrap_or_default();
+
+        let mut pre: Vec<String> = Vec::new();
+        match &config.video.crop {
+            Some(Crop::Mode(CropMode::None)) | None => {}
+            Some(Crop::Mode(CropMode::Auto)) => pre.push("crop=auto".into()),
+            Some(Crop::Explicit(p)) => {
+                let mut parts: Vec<String> = Vec::new();
+                if let Some(v) = p.top {
+                    parts.push(format!("top:{}", v));
+                }
+                if let Some(v) = p.bottom {
+                    parts.push(format!("bottom:{}", v));
+                }
+                if let Some(v) = p.left {
+                    parts.push(format!("left:{}", v));
+                }
+                if let Some(v) = p.right {
+                    parts.push(format!("right:{}", v));
+                }
+                pre.push(format!("crop={}", parts.join(",")));
+            }
+        }
+        match config.video.deinterlace {
+            Some(DeinterlaceMode::None) | None => {}
+            Some(DeinterlaceMode::Auto) | Some(DeinterlaceMode::Yadif) => {
+                pre.push("deinterlace=yadif".into());
+            }
+            Some(DeinterlaceMode::Bwdif) => pre.push("deinterlace=bwdif".into()),
+        }
+        if matches!(config.video.detelecine, Some(DetelecineMode::Auto)) {
+            pre.push("detelecine=auto".into());
+        }
+        if let Some(Denoise::Active(c)) = &config.video.denoise {
+            use crate::config::{DenoiseFilter, DenoisePreset};
+            let filter = match c.filter {
+                Some(DenoiseFilter::Nlmeans) => "nlmeans",
+                Some(DenoiseFilter::Hqdn3d) => "hqdn3d",
+                None => "auto",
+            };
+            let preset = match c.preset.unwrap_or(DenoisePreset::Medium) {
+                DenoisePreset::Ultralight => ":ultralight",
+                DenoisePreset::Light => ":light",
+                DenoisePreset::Medium => ":medium",
+                DenoisePreset::Strong => ":strong",
+                DenoisePreset::Stronger => ":stronger",
+                DenoisePreset::Verystrong => ":verystrong",
+            };
+            pre.push(format!("denoise={}{}", filter, preset));
+        }
+        if let Some(Resolution::Explicit(r)) = &config.video.resolution {
+            match (r.width, r.height) {
+                (Some(w), Some(h)) => pre.push(format!("scale={}x{}", w, h)),
+                (Some(w), None) => pre.push(format!("width={}", w)),
+                (None, Some(h)) => pre.push(format!("height={}", h)),
+                (None, None) => {}
+            }
+        }
+        let pre_str = if pre.is_empty() {
+            "no preprocessing".to_string()
+        } else {
+            pre.join(", ")
+        };
+        writeln!(
+            out,
+            "  Would transcode video: {} crf={}{}{}, {}.",
+            name, crf, tune_str, preset_str, pre_str,
+        )
+        .map_err(crate::io_render_err)?;
+    }
+
+    // --- Audio ---------------------------------------------------------------
+    if let Some(tracks) = &config.audio.tracks {
+        let normalize_mix = config.audio.normalize_mix.unwrap_or(false);
+        let actions: Vec<AudioAction> = tracks
+            .iter()
+            .map(|t| {
+                let src_idx = t.source.unwrap_or(1).saturating_sub(1) as usize;
+                probe
+                    .audio
+                    .get(src_idx)
+                    .map(|src| decide_audio_action(t, &config.audio, src, normalize_mix))
+                    .unwrap_or_else(|| {
+                        let enc = t
+                            .encoder
+                            .as_deref()
+                            .or(config.audio.encoder.as_deref())
+                            .unwrap_or("aac");
+                        AudioAction::Transcode {
+                            encoder: ffmpeg_args::audio_encoder_to_ffmpeg(enc).to_string(),
+                            bitrate_kbps: t.bitrate.or(config.audio.bitrate).unwrap_or(192),
+                            channels: ffmpeg_args::mixdown_to_channels(
+                                t.mixdown
+                                    .or(config.audio.mixdown)
+                                    .unwrap_or(crate::config::Mixdown::Stereo),
+                            ),
+                        }
+                    })
+            })
+            .collect();
+
+        let copy_n = actions.iter().filter(|a| **a == AudioAction::Copy).count();
+        let trans_n = tracks.len() - copy_n;
+        let heading = if trans_n == 0 {
+            format!("Would copy {} audio track{}:", tracks.len(), if tracks.len() == 1 { "" } else { "s" })
+        } else if copy_n == 0 {
+            format!("Would transcode {} audio track{}:", tracks.len(), if tracks.len() == 1 { "" } else { "s" })
+        } else {
+            format!("Would process {} audio track{}:", tracks.len(), if tracks.len() == 1 { "" } else { "s" })
+        };
+        writeln!(out, "  {}", heading).map_err(crate::io_render_err)?;
+
+        for (t, action) in tracks.iter().zip(actions.iter()) {
+            let label = audio_track_label(t);
+            match action {
+                AudioAction::Copy => {
+                    let src_idx = t.source.unwrap_or(1).saturating_sub(1) as usize;
+                    let src_desc = probe.audio.get(src_idx).map(|s| {
+                        format!(" ({} {})", s.codec, channels_label(s.channels))
+                    }).unwrap_or_default();
+                    writeln!(out, "    {}: copy{}.", label, src_desc)
+                        .map_err(crate::io_render_err)?;
+                }
+                AudioAction::Transcode { encoder, bitrate_kbps, channels } => {
+                    writeln!(
+                        out,
+                        "    {}: transcode → {} {}k {}.",
+                        label, encoder, bitrate_kbps, channels_label(*channels),
+                    )
+                    .map_err(crate::io_render_err)?;
+                }
+            }
+        }
+    }
+
+    // --- Mux destination -----------------------------------------------------
+    let exists_note = if output_exists {
+        match on_existing {
+            OnExisting::Warn => " (warning: output exists, would skip)",
+            OnExisting::SkipSilently => " (output exists, would skip silently)",
+            OnExisting::Overwrite => " (output exists, would overwrite)",
+            OnExisting::Fail => " (output exists, would fail)",
+        }
+    } else {
+        ""
+    };
+    writeln!(out, "  Would mux to: {}{}.", output_path.display(), exists_note)
+        .map_err(crate::io_render_err)?;
+
+    // --- Verbose: show the ffmpeg command line --------------------------------
+    // Subtitles are omitted (their temp-dir paths aren't known at dry-run time).
+    if verbosity == Verbosity::Verbose {
+        let args = build_ffmpeg_args(
+            &PathBuf::from(input_name),
+            output_path,
+            config,
+            probe,
+            &[],
+            None,
+            episode_number,
+        );
+        writeln!(out, "  ffmpeg {} (subtitle args omitted)", args.join(" "))
+            .map_err(crate::io_render_err)?;
+    }
+
+    writeln!(out).map_err(crate::io_render_err)?; // blank line between files
+    Ok(())
+}
+
+/// Dry-run end-of-batch summary (replaces the normal `print_batch_summary`).
+fn print_dry_run_summary(
+    input: &Path,
+    file_count: usize,
+    error_count: usize,
+    verbosity: Verbosity,
+    out: &mut dyn Write,
+) -> Result<()> {
+    writeln!(out, "{}", "─".repeat(50)).map_err(crate::io_render_err)?;
+    let err_str = match error_count {
+        0 => "0 errors".to_string(),
+        1 => "1 error".to_string(),
+        n => format!("{} errors", n),
+    };
+    writeln!(
+        out,
+        "  {} {} would be processed. {}.",
+        file_count,
+        if file_count == 1 { "file" } else { "files" },
+        err_str,
+    )
+    .map_err(crate::io_render_err)?;
+    if verbosity != Verbosity::Quiet {
+        writeln!(
+            out,
+            "Run `bento config {}` to see where each setting resolved from.",
+            input.display(),
+        )
+        .map_err(crate::io_render_err)?;
+    }
+    Ok(())
+}
+
+// --- Dry-run plan helpers ---------------------------------------------------
+
+fn sub_track_label(t: &SubtitleTrack) -> String {
+    match (&t.title, &t.lang) {
+        (Some(title), Some(lang)) => format!("\"{}\" ({})", title, lang),
+        (Some(title), None) => format!("\"{}\"", title),
+        (None, Some(lang)) => format!("({})", lang),
+        (None, None) => sub_ref_short(&t.source),
+    }
+}
+
+fn sub_derivation(t: &SubtitleTrack) -> String {
+    use crate::config::FilterMode;
+    let src = sub_ref_short(&t.source);
+    if let Some(sub_ref) = &t.subtract_track {
+        return format!("{} minus {} timestamps", src, sub_ref_short(&Some(sub_ref.clone())));
+    }
+    if let Some(f) = &t.filter {
+        let mode = match f.mode {
+            Some(FilterMode::Retain) => "retained",
+            Some(FilterMode::Remove) => "removed",
+            None => "filtered",
+        };
+        let criterion = if let Some(s) = &f.style {
+            format!("style \"{}\" {}", s, mode)
+        } else if let Some(font) = &f.font {
+            format!("font \"{}\" {}", font, mode)
+        } else if let Some(sz) = &f.size {
+            format!("size {} {}", sz, mode)
+        } else {
+            mode.to_string()
+        };
+        return format!("{} ({})", src, criterion);
+    }
+    src
+}
+
+fn sub_ref_short(r: &Option<TrackRef>) -> String {
+    match r {
+        Some(TrackRef::Index(i)) => format!("track {}", i),
+        Some(TrackRef::Path(p)) => {
+            let name = std::path::Path::new(p)
+                .file_name()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_else(|| p.clone());
+            format!("file \"{}\"", name)
+        }
+        None => "?".to_string(),
+    }
+}
+
+fn audio_track_label(t: &crate::config::AudioTrack) -> String {
+    match (&t.title, &t.lang) {
+        (Some(title), Some(lang)) => format!("\"{}\" ({})", title, lang),
+        (Some(title), None) => format!("\"{}\"", title),
+        (None, Some(lang)) => format!("({})", lang),
+        (None, None) => format!("track {}", t.source.unwrap_or(0)),
+    }
+}
+
+fn channels_label(n: u32) -> &'static str {
+    match n {
+        1 => "mono",
+        2 => "stereo",
+        6 => "5.1",
+        _ => "?ch",
+    }
+}
+
 fn compute_output_path(
     input: &Path,
     config: &Config,
     output_dir_override: Option<&Path>,
+    dry_run: bool,
 ) -> Result<(PathBuf, Option<i64>)> {
     let container = config.output.container.unwrap_or(Container::Mp4);
     let extension = match container {
@@ -548,7 +1020,7 @@ fn compute_output_path(
         }
     };
 
-    if !destination.exists() {
+    if !dry_run && !destination.exists() {
         std::fs::create_dir_all(&destination).map_err(|e| Error::Io {
             path: destination.clone(),
             source: e,

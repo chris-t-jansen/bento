@@ -454,7 +454,7 @@ fn soft_subtitle_codec(format: SourceFormat, container: Container) -> &'static s
     }
 }
 
-fn mixdown_to_channels(mixdown: Mixdown) -> u32 {
+pub fn mixdown_to_channels(mixdown: Mixdown) -> u32 {
     match mixdown {
         Mixdown::Mono => 1,
         Mixdown::Stereo => 2,

@@ -206,6 +206,7 @@ fn run_convert_errors_on_missing_input() {
         Path::new("/nonexistent/episode.mkv"),
         None,
         None,
+        false,
         Verbosity::Default,
         &mut out,
     );
@@ -224,7 +225,7 @@ container = "mkv"
 "#,
     );
     let mut out = buf();
-    let result = run_convert(&video, None, None, Verbosity::Default, &mut out);
+    let result = run_convert(&video, None, None, false, Verbosity::Default, &mut out);
     assert!(
         matches!(result, Err(Error::RequiredFieldMissing { ref field, .. }) if field == "audio.tracks"),
         "expected RequiredFieldMissing(audio.tracks), got: {:?}",
@@ -250,7 +251,7 @@ tracks = [{ source = 1 }]
 "#,
     );
     let mut out = buf();
-    let result = run_convert(&video, None, None, Verbosity::Default, &mut out);
+    let result = run_convert(&video, None, None, false, Verbosity::Default, &mut out);
     assert!(
         matches!(result, Err(Error::OutputExists { .. })),
         "expected OutputExists, got: {:?}",
@@ -275,7 +276,7 @@ tracks = [{ source = 1 }]
 "#,
     );
     let mut out = buf();
-    let result = run_convert(&video, None, None, Verbosity::Default, &mut out);
+    let result = run_convert(&video, None, None, false, Verbosity::Default, &mut out);
     assert!(result.is_ok(), "skip_silently should return Ok: {:?}", result);
 }
 
@@ -296,7 +297,7 @@ tracks = [{ source = 1 }]
 "#,
     );
     let mut out = buf();
-    let result = run_convert(&video, None, None, Verbosity::Default, &mut out);
+    let result = run_convert(&video, None, None, false, Verbosity::Default, &mut out);
     assert!(result.is_ok(), "warn mode should skip and return Ok: {:?}", result);
     let text = String::from_utf8(out).unwrap();
     assert!(
@@ -304,4 +305,178 @@ tracks = [{ source = 1 }]
         "expected skip warning:\n{}",
         text
     );
+}
+
+// ---------------------------------------------------------------------------
+// run_convert --dry-run
+// ---------------------------------------------------------------------------
+
+#[test]
+fn dry_run_header_says_dry_run_for() {
+    let dir = TestDir::new("dryrun_header");
+    let video = dir.write("episode01.mkv", "");
+    dir.write(
+        "bento.toml",
+        r#"
+[output]
+container = "mkv"
+on_existing = "warn"
+
+[audio]
+tracks = [{ source = 1, lang = "jpn", title = "Japanese", default = true }]
+"#,
+    );
+    let mut out = buf();
+    // Dry-run with a valid config still reaches ffprobe; skip if not installed.
+    let result = run_convert(&video, None, None, true, Verbosity::Default, &mut out);
+    let text = String::from_utf8(out).unwrap();
+    match result {
+        Err(Error::FfmpegNotFound) => return, // ffprobe not installed — skip
+        _ => {}
+    }
+    assert!(
+        text.contains("Dry-run for"),
+        "header should say 'Dry-run for', got:\n{}",
+        text
+    );
+    assert!(
+        !text.contains("Converting"),
+        "header should NOT say 'Converting' in dry-run, got:\n{}",
+        text
+    );
+}
+
+#[test]
+fn dry_run_config_error_shows_summary_with_error_count() {
+    let dir = TestDir::new("dryrun_config_err");
+    let video = dir.write("episode01.mkv", "");
+    // No audio.tracks → RequiredFieldMissing before probing.
+    dir.write(
+        "bento.toml",
+        r#"
+[output]
+container = "mkv"
+"#,
+    );
+    let mut out = buf();
+    let result = run_convert(&video, None, None, true, Verbosity::Default, &mut out);
+    let text = String::from_utf8(out).unwrap();
+    assert!(result.is_err(), "config error should propagate: {:?}", result);
+    assert!(
+        text.contains("would be processed"),
+        "dry-run summary missing 'would be processed':\n{}",
+        text
+    );
+    assert!(
+        text.contains("error"),
+        "dry-run summary should mention error count:\n{}",
+        text
+    );
+}
+
+#[test]
+fn dry_run_does_not_create_output_directory() {
+    let dir = TestDir::new("dryrun_no_mkdir");
+    let video = dir.write("episode01.mkv", "");
+    // Config asks for an 'encoded/' subdir that doesn't exist yet.
+    dir.write(
+        "bento.toml",
+        r#"
+[output]
+container = "mp4"
+destination = "encoded"
+
+[audio]
+tracks = [{ source = 1, lang = "jpn", default = true }]
+"#,
+    );
+    let encoded_dir = dir.path.join("encoded");
+    assert!(!encoded_dir.exists(), "encoded/ should not exist before run");
+
+    let mut out = buf();
+    let result = run_convert(&video, None, None, true, Verbosity::Default, &mut out);
+    match result {
+        Err(Error::FfmpegNotFound) => return, // ffprobe not installed — skip
+        _ => {}
+    }
+
+    assert!(
+        !encoded_dir.exists(),
+        "dry-run must NOT create the destination directory, but encoded/ was created"
+    );
+}
+
+#[test]
+fn dry_run_summary_footer_suppressed_in_quiet_mode() {
+    let dir = TestDir::new("dryrun_quiet");
+    let video = dir.write("episode01.mkv", "");
+    // No audio.tracks so we fail before probing — controllable exit.
+    dir.write("bento.toml", "[output]\ncontainer = \"mkv\"\n");
+    let mut out = buf();
+    let _ = run_convert(&video, None, None, true, Verbosity::Quiet, &mut out);
+    let text = String::from_utf8(out).unwrap();
+    assert!(
+        !text.contains("bento config"),
+        "quiet mode should suppress the footer hint:\n{}",
+        text
+    );
+}
+
+#[test]
+fn dry_run_summary_footer_shown_in_default_mode() {
+    let dir = TestDir::new("dryrun_footer");
+    let video = dir.write("episode01.mkv", "");
+    dir.write("bento.toml", "[output]\ncontainer = \"mkv\"\n");
+    let mut out = buf();
+    let _ = run_convert(&video, None, None, true, Verbosity::Default, &mut out);
+    let text = String::from_utf8(out).unwrap();
+    assert!(
+        text.contains("bento config"),
+        "default mode should show the footer hint:\n{}",
+        text
+    );
+}
+
+#[test]
+fn dry_run_plan_contains_expected_sections() {
+    let dir = TestDir::new("dryrun_plan");
+    let video = dir.write("episode01.mkv", "");
+    dir.write(
+        "bento.toml",
+        r#"
+[output]
+container = "mp4"
+
+[video]
+encoder = { name = "x264", crf = 20, tune = "animation" }
+preset = "medium"
+
+[audio]
+tracks = [
+    { source = 1, lang = "jpn", title = "Japanese", default = true },
+    { source = 2, lang = "eng", title = "English Dub" },
+]
+
+[subtitles]
+tracks = [
+    { source = 1, format = "srt", mux = "soft", subtract_track = 2, lang = "eng", title = "English", default = true },
+    { source = 2, format = "ass", mux = "burn" },
+]
+"#,
+    );
+    let mut out = buf();
+    let result = run_convert(&video, None, None, true, Verbosity::Default, &mut out);
+    let text = String::from_utf8(out).unwrap();
+    match result {
+        // ffprobe not installed or rejected the dummy file — skip the plan assertions.
+        Err(Error::FfmpegNotFound) | Err(Error::FfprobeFailed { .. }) => return,
+        _ => {}
+    }
+    assert!(text.contains("Would extract subtitle track"), "missing subtitle extraction line:\n{}", text);
+    assert!(text.contains("Would derive"), "missing subtitle derivation line:\n{}", text);
+    assert!(text.contains("Would burn"), "missing burn subtitle line:\n{}", text);
+    assert!(text.contains("Would transcode video: x264 crf=20"), "missing video plan:\n{}", text);
+    assert!(text.contains("Would"), "missing audio plan:\n{}", text);
+    assert!(text.contains("Would mux to:"), "missing mux destination line:\n{}", text);
+    assert!(text.contains("would be processed"), "missing dry-run summary:\n{}", text);
 }
