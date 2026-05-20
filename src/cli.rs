@@ -50,6 +50,12 @@ pub enum Command {
         path: PathBuf,
         output_dir: Option<PathBuf>,
 
+        /// Resolve config and print what would happen without encoding anything.
+        /// Probes source files for copy-vs-transcode decisions. No files are
+        /// written or created.
+        #[arg(short = 'n', long = "dry-run")]
+        dry_run: bool,
+
         /// Overwrite existing output files. Shorthand for
         /// `--on-existing=overwrite`. Mutually exclusive with `--on-existing`.
         #[arg(short = 'f', long = "overwrite", conflicts_with = "on_existing")]
@@ -91,6 +97,7 @@ pub fn run() -> Result<()> {
         Command::Convert {
             path,
             output_dir,
+            dry_run,
             overwrite,
             on_existing,
             verbose,
@@ -112,6 +119,7 @@ pub fn run() -> Result<()> {
                 &path,
                 output_dir.as_deref(),
                 on_existing_override,
+                dry_run,
                 verbosity,
                 &mut stdout,
             )

@@ -48,6 +48,7 @@ Foundation pieces that are working end-to-end. Most have at least light test cov
 ### Pipeline
 - Source probing via ffmpeg: stream enumeration, duration extraction, and crop detection — DESIGN.md §Probe. (`pipeline/probe.rs`.)
 - Real-time progress feedback during encode: spinner (unknown duration) or progress bar (known duration) with per-file status lines (✓/–/✗ with color); multi-line unified display (filename, config-layer summary, and bar/elapsed as a single visual entry); unified pre-encode header listing files (same format for single-file and directory mode); blank-line spacing between files and before batch summary; uses `indicatif` + `console`. (`progress.rs`, `pipeline/mod.rs`.)
+- **`--dry-run` / `-n`** — resolve config, probe source files, and print the per-file encode plan (subtitle derivation, video params, audio copy-vs-transcode per track, mux destination) with no filesystem effects: no encodes, no output directories created, no temp files written. Header changes to "Dry-run for N files"; summary shows "N files would be processed. M errors."; discovery footer ("Run `bento config ...`") shown unless `--quiet`; under `--verbose`, also prints the ffmpeg command line with subtitle args omitted. (`cli.rs`, `pipeline/mod.rs`, `pipeline/ffmpeg_args.rs`.)
 - Per-file error handling with batch-continue + end-of-batch summary — DESIGN.md §Batch behavior. (`pipeline/mod.rs`.)
 - Audio copy-vs-transcode decision tree — DESIGN.md §Audio actions. (`pipeline/ffmpeg_args.rs`.)
 - ffmpeg arg construction for video encoder, preset, tune, CRF, crop (pixels), deinterlace, detelecine, denoise, resolution/scale — DESIGN.md §Video. (`pipeline/ffmpeg_args.rs`.)
@@ -80,7 +81,6 @@ Listed in rough priority order: MVP-completion items first, then UX/control flag
 
 ### CLI control & visibility flags
 - `--no-warn-X` family + `--no-warnings` suppression flags — DESIGN.md §Warning suppression.
-- `--dry-run` / `-n` plan-without-write mode — DESIGN.md §CLI flags.
 - `--keep-intermediates` to preserve the temp dir — DESIGN.md §CLI flags.
 - `--generate-config` to write a sidecar capturing CLI overrides — DESIGN.md §Sidecar generation.
 - `--set KEY=VALUE` generic dotted-path overrides — DESIGN.md §CLI flags.
@@ -110,4 +110,4 @@ Things in the code that don't cleanly map back to DESIGN.md, or design decisions
 
 ---
 
-*Last updated: 2026-05-20. Session: unified pre-encode header for single-file and directory modes; multi-line progress display with config-layer summary integrated as a visual unit with the bar/spinner; blank-line spacing between files and before batch summary; promoted two stale In Progress items (baked-in defaults, global config bootstrap) to Done; moved `bento check` from Not Started to In Progress.*
+*Last updated: 2026-05-20. Session: implemented `--dry-run` / `-n` — plan-without-encode mode. Probes source files for copy-vs-transcode decisions; prints subtitle extraction/derivation, video encoding params, per-track audio decisions, and mux destination; no filesystem effects (no output dirs created, no temp files, no encodes); changed header to "Dry-run for N files"; dry-run summary shows "N files would be processed. M errors." with discovery footer (suppressed under -q); verbose mode prints ffmpeg command line; 6 new integration tests covering the flag surface.*
