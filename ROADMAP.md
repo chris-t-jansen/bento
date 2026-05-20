@@ -38,6 +38,7 @@ Foundation pieces that are working end-to-end. Most have at least light test cov
 - `bento config <path>` resolves and prints config with per-layer provenance — DESIGN.md §CLI. (`render.rs`.)
 - `--overwrite` / `-f` shorthand and `--on-existing={warn,skip-silently,overwrite,fail}` — DESIGN.md §CLI flags.
 - `--verbose` / `-v` and `--quiet` / `-q` verbosity flags — DESIGN.md §CLI flags. (`cli.rs`, `verbosity.rs`.)
+- `--dry-run` / `-n` plan-without-encode mode — DESIGN.md §CLI flags. Resolves config, probes sources, and prints the per-file encode plan with no filesystem effects; summary shows "N files would be processed. M errors." with a `bento config` discovery footer. (`cli.rs`, `pipeline/mod.rs`, `pipeline/ffmpeg_args.rs`.)
 
 ### Schema parsing (parsed and merged, even if not all are wired into the encoder yet)
 - `[output]` — container, destination, preserve_chapters, on_existing, metadata block, naming block.
