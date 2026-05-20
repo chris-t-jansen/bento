@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 use bento::{
     error::Error,
-    pipeline::run_convert,
+    pipeline::{WarnFlags, run_convert},
     render::run_config,
     verbosity::Verbosity,
 };
@@ -208,6 +208,7 @@ fn run_convert_errors_on_missing_input() {
         None,
         false,
         Verbosity::Default,
+        WarnFlags::default(),
         &mut out,
     );
     assert!(matches!(result, Err(Error::PathNotFound(_))));
@@ -225,7 +226,15 @@ container = "mkv"
 "#,
     );
     let mut out = buf();
-    let result = run_convert(&video, None, None, false, Verbosity::Default, &mut out);
+    let result = run_convert(
+        &video,
+        None,
+        None,
+        false,
+        Verbosity::Default,
+        WarnFlags::default(),
+        &mut out,
+    );
     assert!(
         matches!(result, Err(Error::RequiredFieldMissing { ref field, .. }) if field == "audio.tracks"),
         "expected RequiredFieldMissing(audio.tracks), got: {:?}",
@@ -237,7 +246,6 @@ container = "mkv"
 fn run_convert_on_existing_fail_returns_output_exists() {
     let dir = TestDir::new("conv_on_existing_fail");
     let video = dir.write("episode01.mkv", "");
-    // Pre-create the output file so on_existing=fail triggers.
     dir.write("episode01.mp4", "");
     dir.write(
         "bento.toml",
@@ -251,7 +259,15 @@ tracks = [{ source = 1 }]
 "#,
     );
     let mut out = buf();
-    let result = run_convert(&video, None, None, false, Verbosity::Default, &mut out);
+    let result = run_convert(
+        &video,
+        None,
+        None,
+        false,
+        Verbosity::Default,
+        WarnFlags::default(),
+        &mut out,
+    );
     assert!(
         matches!(result, Err(Error::OutputExists { .. })),
         "expected OutputExists, got: {:?}",
@@ -276,7 +292,15 @@ tracks = [{ source = 1 }]
 "#,
     );
     let mut out = buf();
-    let result = run_convert(&video, None, None, false, Verbosity::Default, &mut out);
+    let result = run_convert(
+        &video,
+        None,
+        None,
+        false,
+        Verbosity::Default,
+        WarnFlags::default(),
+        &mut out,
+    );
     assert!(result.is_ok(), "skip_silently should return Ok: {:?}", result);
 }
 
@@ -297,7 +321,15 @@ tracks = [{ source = 1 }]
 "#,
     );
     let mut out = buf();
-    let result = run_convert(&video, None, None, false, Verbosity::Default, &mut out);
+    let result = run_convert(
+        &video,
+        None,
+        None,
+        false,
+        Verbosity::Default,
+        WarnFlags::default(),
+        &mut out,
+    );
     assert!(result.is_ok(), "warn mode should skip and return Ok: {:?}", result);
     let text = String::from_utf8(out).unwrap();
     assert!(
@@ -327,11 +359,18 @@ tracks = [{ source = 1, lang = "jpn", title = "Japanese", default = true }]
 "#,
     );
     let mut out = buf();
-    // Dry-run with a valid config still reaches ffprobe; skip if not installed.
-    let result = run_convert(&video, None, None, true, Verbosity::Default, &mut out);
+    let result = run_convert(
+        &video,
+        None,
+        None,
+        true,
+        Verbosity::Default,
+        WarnFlags::default(),
+        &mut out,
+    );
     let text = String::from_utf8(out).unwrap();
     match result {
-        Err(Error::FfmpegNotFound) => return, // ffprobe not installed — skip
+        Err(Error::FfmpegNotFound) => return,
         _ => {}
     }
     assert!(
@@ -350,7 +389,6 @@ tracks = [{ source = 1, lang = "jpn", title = "Japanese", default = true }]
 fn dry_run_config_error_shows_summary_with_error_count() {
     let dir = TestDir::new("dryrun_config_err");
     let video = dir.write("episode01.mkv", "");
-    // No audio.tracks → RequiredFieldMissing before probing.
     dir.write(
         "bento.toml",
         r#"
@@ -359,7 +397,15 @@ container = "mkv"
 "#,
     );
     let mut out = buf();
-    let result = run_convert(&video, None, None, true, Verbosity::Default, &mut out);
+    let result = run_convert(
+        &video,
+        None,
+        None,
+        true,
+        Verbosity::Default,
+        WarnFlags::default(),
+        &mut out,
+    );
     let text = String::from_utf8(out).unwrap();
     assert!(result.is_err(), "config error should propagate: {:?}", result);
     assert!(
@@ -378,7 +424,6 @@ container = "mkv"
 fn dry_run_does_not_create_output_directory() {
     let dir = TestDir::new("dryrun_no_mkdir");
     let video = dir.write("episode01.mkv", "");
-    // Config asks for an 'encoded/' subdir that doesn't exist yet.
     dir.write(
         "bento.toml",
         r#"
@@ -394,9 +439,17 @@ tracks = [{ source = 1, lang = "jpn", default = true }]
     assert!(!encoded_dir.exists(), "encoded/ should not exist before run");
 
     let mut out = buf();
-    let result = run_convert(&video, None, None, true, Verbosity::Default, &mut out);
+    let result = run_convert(
+        &video,
+        None,
+        None,
+        true,
+        Verbosity::Default,
+        WarnFlags::default(),
+        &mut out,
+    );
     match result {
-        Err(Error::FfmpegNotFound) => return, // ffprobe not installed — skip
+        Err(Error::FfmpegNotFound) => return,
         _ => {}
     }
 
@@ -410,10 +463,17 @@ tracks = [{ source = 1, lang = "jpn", default = true }]
 fn dry_run_summary_footer_suppressed_in_quiet_mode() {
     let dir = TestDir::new("dryrun_quiet");
     let video = dir.write("episode01.mkv", "");
-    // No audio.tracks so we fail before probing — controllable exit.
     dir.write("bento.toml", "[output]\ncontainer = \"mkv\"\n");
     let mut out = buf();
-    let _ = run_convert(&video, None, None, true, Verbosity::Quiet, &mut out);
+    let _ = run_convert(
+        &video,
+        None,
+        None,
+        true,
+        Verbosity::Quiet,
+        WarnFlags::default(),
+        &mut out,
+    );
     let text = String::from_utf8(out).unwrap();
     assert!(
         !text.contains("bento config"),
@@ -428,7 +488,15 @@ fn dry_run_summary_footer_shown_in_default_mode() {
     let video = dir.write("episode01.mkv", "");
     dir.write("bento.toml", "[output]\ncontainer = \"mkv\"\n");
     let mut out = buf();
-    let _ = run_convert(&video, None, None, true, Verbosity::Default, &mut out);
+    let _ = run_convert(
+        &video,
+        None,
+        None,
+        true,
+        Verbosity::Default,
+        WarnFlags::default(),
+        &mut out,
+    );
     let text = String::from_utf8(out).unwrap();
     assert!(
         text.contains("bento config"),
@@ -465,10 +533,17 @@ tracks = [
 "#,
     );
     let mut out = buf();
-    let result = run_convert(&video, None, None, true, Verbosity::Default, &mut out);
+    let result = run_convert(
+        &video,
+        None,
+        None,
+        true,
+        Verbosity::Default,
+        WarnFlags::default(),
+        &mut out,
+    );
     let text = String::from_utf8(out).unwrap();
     match result {
-        // ffprobe not installed or rejected the dummy file — skip the plan assertions.
         Err(Error::FfmpegNotFound) | Err(Error::FfprobeFailed { .. }) => return,
         _ => {}
     }
@@ -479,4 +554,306 @@ tracks = [
     assert!(text.contains("Would"), "missing audio plan:\n{}", text);
     assert!(text.contains("Would mux to:"), "missing mux destination line:\n{}", text);
     assert!(text.contains("would be processed"), "missing dry-run summary:\n{}", text);
+}
+
+// ---------------------------------------------------------------------------
+// --no-warn-X / --no-warnings suppression flags
+//
+// Each test uses a config that fires the warning under test plus a hard
+// validation error (two audio `default=true`) or missing `audio.tracks` to
+// stop execution before ffmpeg is needed. Warnings are emitted before any
+// error check, so they appear in the output even when the run exits early.
+// ---------------------------------------------------------------------------
+
+/// Config that triggers `warn_multiple_burns`. Omits `audio.tracks` so the
+/// run exits with `RequiredFieldMissing` (no ffmpeg involved).
+fn multiple_burns_toml() -> &'static str {
+    r#"
+[subtitles]
+tracks = [
+    { source = 1, format = "ass", mux = "burn" },
+    { source = 2, format = "ass", mux = "burn" },
+    { source = 3, format = "srt", mux = "soft", default = true },
+]
+"#
+}
+
+/// Config that triggers `warn_burn_metadata`. Omits `audio.tracks`.
+fn burn_metadata_toml() -> &'static str {
+    r#"
+[subtitles]
+tracks = [
+    { source = 1, format = "ass", mux = "burn", lang = "eng" },
+    { source = 2, format = "srt", mux = "soft", default = true },
+]
+"#
+}
+
+/// Config that triggers audio `warn_no_default`. Uses two subtitle
+/// `default=true` to produce a hard error that stops the run without ffmpeg.
+fn audio_no_default_toml() -> &'static str {
+    r#"
+[audio]
+tracks = [{ source = 1, lang = "jpn" }]
+
+[subtitles]
+tracks = [
+    { source = 1, format = "srt", mux = "soft", default = true },
+    { source = 2, format = "srt", mux = "soft", default = true },
+]
+"#
+}
+
+/// Config that triggers subtitle `warn_no_default`. Uses two audio
+/// `default=true` to produce a hard error that stops the run without ffmpeg.
+fn subtitle_no_default_toml() -> &'static str {
+    r#"
+[audio]
+tracks = [
+    { source = 1, lang = "jpn", default = true },
+    { source = 2, lang = "eng", default = true },
+]
+
+[subtitles]
+tracks = [{ source = 1, format = "srt", mux = "soft" }]
+"#
+}
+
+/// Config that triggers `warn_crf_codec_mismatch` (x264 with x265-typical
+/// CRF ≥ 24). Uses two audio `default=true` as a hard stop.
+fn crf_mismatch_toml() -> &'static str {
+    r#"
+[video]
+encoder = { name = "x264", crf = 26 }
+
+[audio]
+tracks = [
+    { source = 1, default = true },
+    { source = 2, default = true },
+]
+"#
+}
+
+#[test]
+fn no_warn_multiple_burns_suppresses_warning() {
+    let dir = TestDir::new("warn_burns_suppress");
+    let video = dir.write("episode01.mkv", "");
+    dir.write("bento.toml", multiple_burns_toml());
+
+    // Without suppression: warning is present.
+    let mut out = buf();
+    let _ = run_convert(&video, None, None, false, Verbosity::Default, WarnFlags::default(), &mut out);
+    let text = String::from_utf8(out).unwrap();
+    assert!(
+        text.contains("subtitle tracks have mux=\"burn\""),
+        "expected multiple-burns warning in output:\n{}",
+        text
+    );
+
+    // With suppression: warning is absent.
+    let mut out = buf();
+    let _ = run_convert(
+        &video,
+        None,
+        None,
+        false,
+        Verbosity::Default,
+        WarnFlags { no_warn_multiple_burns: true, ..WarnFlags::default() },
+        &mut out,
+    );
+    let text = String::from_utf8(out).unwrap();
+    assert!(
+        !text.contains("subtitle tracks have mux=\"burn\""),
+        "multiple-burns warning should be suppressed:\n{}",
+        text
+    );
+}
+
+#[test]
+fn no_warn_burn_metadata_suppresses_warning() {
+    let dir = TestDir::new("warn_burn_meta_suppress");
+    let video = dir.write("episode01.mkv", "");
+    dir.write("bento.toml", burn_metadata_toml());
+
+    let mut out = buf();
+    let _ = run_convert(&video, None, None, false, Verbosity::Default, WarnFlags::default(), &mut out);
+    let text = String::from_utf8(out).unwrap();
+    assert!(
+        text.contains("burn subtitle track has soft-only metadata"),
+        "expected burn-metadata warning:\n{}",
+        text
+    );
+
+    let mut out = buf();
+    let _ = run_convert(
+        &video,
+        None,
+        None,
+        false,
+        Verbosity::Default,
+        WarnFlags { no_warn_burn_metadata: true, ..WarnFlags::default() },
+        &mut out,
+    );
+    let text = String::from_utf8(out).unwrap();
+    assert!(
+        !text.contains("burn subtitle track has soft-only metadata"),
+        "burn-metadata warning should be suppressed:\n{}",
+        text
+    );
+}
+
+#[test]
+fn no_warn_no_default_suppresses_audio_warning() {
+    let dir = TestDir::new("warn_audio_default_suppress");
+    let video = dir.write("episode01.mkv", "");
+    dir.write("bento.toml", audio_no_default_toml());
+
+    let mut out = buf();
+    let _ = run_convert(&video, None, None, false, Verbosity::Default, WarnFlags::default(), &mut out);
+    let text = String::from_utf8(out).unwrap();
+    assert!(
+        text.contains("no audio track has default=true"),
+        "expected audio no-default warning:\n{}",
+        text
+    );
+
+    let mut out = buf();
+    let _ = run_convert(
+        &video,
+        None,
+        None,
+        false,
+        Verbosity::Default,
+        WarnFlags { no_warn_no_default: true, ..WarnFlags::default() },
+        &mut out,
+    );
+    let text = String::from_utf8(out).unwrap();
+    assert!(
+        !text.contains("no audio track has default=true"),
+        "audio no-default warning should be suppressed:\n{}",
+        text
+    );
+}
+
+#[test]
+fn no_warn_no_default_suppresses_subtitle_warning() {
+    let dir = TestDir::new("warn_sub_default_suppress");
+    let video = dir.write("episode01.mkv", "");
+    dir.write("bento.toml", subtitle_no_default_toml());
+
+    let mut out = buf();
+    let _ = run_convert(&video, None, None, false, Verbosity::Default, WarnFlags::default(), &mut out);
+    let text = String::from_utf8(out).unwrap();
+    assert!(
+        text.contains("no subtitle track has default=true"),
+        "expected subtitle no-default warning:\n{}",
+        text
+    );
+
+    let mut out = buf();
+    let _ = run_convert(
+        &video,
+        None,
+        None,
+        false,
+        Verbosity::Default,
+        WarnFlags { no_warn_no_default: true, ..WarnFlags::default() },
+        &mut out,
+    );
+    let text = String::from_utf8(out).unwrap();
+    assert!(
+        !text.contains("no subtitle track has default=true"),
+        "subtitle no-default warning should be suppressed:\n{}",
+        text
+    );
+}
+
+#[test]
+fn no_warn_crf_codec_mismatch_suppresses_warning() {
+    let dir = TestDir::new("warn_crf_suppress");
+    let video = dir.write("episode01.mkv", "");
+    dir.write("bento.toml", crf_mismatch_toml());
+
+    let mut out = buf();
+    let _ = run_convert(&video, None, None, false, Verbosity::Default, WarnFlags::default(), &mut out);
+    let text = String::from_utf8(out).unwrap();
+    assert!(
+        text.contains("encoder.crf"),
+        "expected CRF mismatch warning:\n{}",
+        text
+    );
+
+    let mut out = buf();
+    let _ = run_convert(
+        &video,
+        None,
+        None,
+        false,
+        Verbosity::Default,
+        WarnFlags { no_warn_crf_codec_mismatch: true, ..WarnFlags::default() },
+        &mut out,
+    );
+    let text = String::from_utf8(out).unwrap();
+    assert!(
+        !text.contains("encoder.crf=26 is x265-typical"),
+        "CRF mismatch warning should be suppressed:\n{}",
+        text
+    );
+}
+
+#[test]
+fn no_warnings_suppresses_all_config_implication_warnings() {
+    let dir = TestDir::new("no_warnings_bulk");
+    let video = dir.write("episode01.mkv", "");
+    // Config generates three distinct warnings:
+    //   - warn_crf_codec_mismatch  (x264 + crf=26)
+    //   - warn_multiple_burns      (two burn tracks)
+    //   - warn_burn_metadata       (burn track with lang)
+    // Plus a hard audio error (two defaults) so the run exits without ffmpeg.
+    dir.write(
+        "bento.toml",
+        r#"
+[video]
+encoder = { name = "x264", crf = 26 }
+
+[audio]
+tracks = [
+    { source = 1, default = true },
+    { source = 2, default = true },
+]
+
+[subtitles]
+tracks = [
+    { source = 1, format = "ass", mux = "burn", lang = "eng" },
+    { source = 2, format = "ass", mux = "burn" },
+    { source = 3, format = "srt", mux = "soft", default = true },
+]
+"#,
+    );
+
+    // Without suppression: all three warnings appear.
+    let mut out = buf();
+    let _ = run_convert(&video, None, None, false, Verbosity::Default, WarnFlags::default(), &mut out);
+    let text = String::from_utf8(out).unwrap();
+    assert!(text.contains("encoder.crf=26"), "CRF warning expected:\n{}", text);
+    assert!(text.contains("subtitle tracks have mux=\"burn\""), "multiple-burns warning expected:\n{}", text);
+    assert!(text.contains("burn subtitle track has soft-only metadata"), "burn-metadata warning expected:\n{}", text);
+
+    // With --no-warnings: all warnings suppressed; hard error still present.
+    let mut out = buf();
+    let _ = run_convert(
+        &video,
+        None,
+        None,
+        false,
+        Verbosity::Default,
+        WarnFlags { no_warnings: true, ..WarnFlags::default() },
+        &mut out,
+    );
+    let text = String::from_utf8(out).unwrap();
+    assert!(!text.contains("encoder.crf=26 is x265-typical"), "CRF warning should be suppressed:\n{}", text);
+    assert!(!text.contains("subtitle tracks have mux=\"burn\""), "multiple-burns warning should be suppressed:\n{}", text);
+    assert!(!text.contains("burn subtitle track has soft-only metadata"), "burn-metadata warning should be suppressed:\n{}", text);
+    // The hard error (two audio defaults) is still present.
+    assert!(text.contains("multiple audio tracks have default=true"), "hard error must still appear:\n{}", text);
 }

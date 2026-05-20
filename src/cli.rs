@@ -7,6 +7,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 
 use crate::config::OnExisting;
 use crate::error::{Error, Result};
+use crate::pipeline::WarnFlags;
 use crate::verbosity::Verbosity;
 
 #[derive(Parser)]
@@ -75,6 +76,43 @@ pub enum Command {
         /// any errors.
         #[arg(short = 'q', long = "quiet", conflicts_with = "verbose")]
         quiet: bool,
+
+        // --- Warning suppression --------------------------------------------
+
+        /// Suppress all warnings for this run. Equivalent to passing every
+        /// individual --no-warn-* flag.
+        #[arg(long = "no-warnings")]
+        no_warnings: bool,
+
+        /// Suppress the "multiple burn subtitle tracks" warning.
+        #[arg(long = "no-warn-multiple-burns")]
+        no_warn_multiple_burns: bool,
+
+        /// Suppress the "burn track has soft-only metadata" warning.
+        #[arg(long = "no-warn-burn-metadata")]
+        no_warn_burn_metadata: bool,
+
+        /// Suppress the "lossy ASS→SRT conversion" warning.
+        #[arg(long = "no-warn-ass-to-srt")]
+        no_warn_ass_to_srt: bool,
+
+        /// Suppress the "no default track" warning for audio and subtitles.
+        #[arg(long = "no-warn-no-default")]
+        no_warn_no_default: bool,
+
+        /// Suppress the "CRF value suspicious for encoder" warning.
+        #[arg(long = "no-warn-crf-codec-mismatch")]
+        no_warn_crf_codec_mismatch: bool,
+
+        /// Suppress the "field resolved from baked-in default" warning.
+        /// (Warning not yet emitted; flag accepted for forward compatibility.)
+        #[arg(long = "no-warn-missing")]
+        no_warn_missing: bool,
+
+        /// Suppress the "redundant config override" warning.
+        /// (Warning not yet emitted; flag accepted for forward compatibility.)
+        #[arg(long = "no-warn-redundant")]
+        no_warn_redundant: bool,
     },
     /// Resolve and print the full config for a file or directory, with provenance.
     Config { path: PathBuf },
@@ -102,6 +140,14 @@ pub fn run() -> Result<()> {
             on_existing,
             verbose,
             quiet,
+            no_warnings,
+            no_warn_multiple_burns,
+            no_warn_burn_metadata,
+            no_warn_ass_to_srt,
+            no_warn_no_default,
+            no_warn_crf_codec_mismatch,
+            no_warn_missing,
+            no_warn_redundant,
         } => {
             let on_existing_override = if overwrite {
                 Some(OnExisting::Overwrite)
@@ -115,12 +161,23 @@ pub fn run() -> Result<()> {
             } else {
                 Verbosity::Default
             };
+            let warn_flags = WarnFlags {
+                no_warnings,
+                no_warn_multiple_burns,
+                no_warn_burn_metadata,
+                no_warn_ass_to_srt,
+                no_warn_no_default,
+                no_warn_crf_codec_mismatch,
+                no_warn_missing,
+                no_warn_redundant,
+            };
             crate::pipeline::run_convert(
                 &path,
                 output_dir.as_deref(),
                 on_existing_override,
                 dry_run,
                 verbosity,
+                warn_flags,
                 &mut stdout,
             )
         }
