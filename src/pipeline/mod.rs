@@ -16,7 +16,7 @@ use crate::validate::{Severity, validate};
 use ffmpeg_args::build_ffmpeg_args;
 use naming::compute_output_stem;
 use probe::{probe_cropdetect, probe_source_streams};
-use subtitle_prep::prepare_subtitles;
+use subtitle_prep::{prepare_subtitles, write_external_sidecars};
 
 pub const VIDEO_EXTENSIONS: &[&str] = &[
     "mkv", "mp4", "m4v", "avi", "mov", "webm", "ts", "m2ts", "wmv",
@@ -246,6 +246,8 @@ fn run_convert_file(
             input: input.to_path_buf(),
         });
     }
+
+    write_external_sidecars(&prepared_subs, &output_path, on_existing, out)?;
 
     writeln!(out, "Done. Output at {}", output_path.display())
         .map_err(crate::io_render_err)?;

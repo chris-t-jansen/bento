@@ -100,6 +100,7 @@ pub enum SubtitleFormat {
 pub enum SubtitleMux {
     Soft,
     Burn,
+    External,
 }
 
 #[derive(Debug, Default, Clone, Deserialize, Serialize, PartialEq, Eq)]

@@ -54,6 +54,7 @@ Foundation pieces that are working end-to-end. Most have at least light test cov
 - Subtitle derivation prep stage: `filter`, `subtract`, `ass_to_srt` wired end-to-end — DESIGN.md §Subtitle derivations. (`pipeline/subtitle_prep.rs`.)
 - SRT parse/serialize/`subtract_by_timestamp` and ASS parse/serialize/`subtract_ass_by_timestamp`/`filter_ass`/`ass_to_srt` — DESIGN.md §Subtitle derivations. (`subtitles.rs`.)
 - Output filename naming: `naming.regex` capture + `naming.template` expansion with format specifiers; `episode`/`ep` capture auto-embeds episode metadata (`tves` for MP4, `PART_NUMBER` for MKV) — DESIGN.md §[output] §Naming. (`pipeline/naming.rs`.)
+- External subtitle tracks (`mux = "external"`): sidecar `.srt`/`.ass` files written next to the output video with Jellyfin-compatible filenames; `on_existing` policy applied per sidecar; duplicate sidecar name detection at validation time; external ASS correctly exempt from the MP4 soft-mux restriction — DESIGN.md §Subtitles > External subtitle tracks. (`pipeline/subtitle_prep.rs`, `validate.rs`.)
 
 ---
 
@@ -71,9 +72,6 @@ Features with substantive code in place but missing wiring, edge cases, or the l
 ## Not started
 
 Listed in rough priority order: MVP-completion items first, then UX/control flags, then deferred subcommands.
-
-### MVP completion (happy path closes once these land)
-- **External subtitle tracks (`mux = "external"`)** — DESIGN.md §Subtitles > External subtitle tracks. Writes Jellyfin-compatible sidecar `.srt`/`.ass` files next to the output video, with filenames built from per-track metadata (`lang`, `title`, `default`, `forced`, `hearing_impaired`). `SubtitleMux::External` variant not yet in the enum; no code yet.
 
 ### CLI control & visibility flags
 - `--verbose` / `--quiet` verbosity levels — DESIGN.md §CLI flags.

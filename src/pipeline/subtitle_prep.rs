@@ -6,7 +6,7 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use crate::config::{SubtitleFilter, SubtitleFormat, SubtitleMux, Subtitles, SubtitleTrack, TrackRef};
+use crate::config::{OnExisting, SubtitleFilter, SubtitleFormat, SubtitleMux, Subtitles, SubtitleTrack, TrackRef};
 use crate::error::{Error, Result};
 use crate::pipeline::probe::SourceProbe;
 use crate::resolve::{Layer, Provenance};
@@ -30,6 +30,20 @@ pub enum PreparedSubtitle {
     /// `subtitles=` libass filter. Multiple burn tracks are supported via
     /// chained filter entries.
     Burn { file: PathBuf },
+    /// External (sidecar) track. `file` is the derived subtitle in a temp
+    /// directory; `write_external_sidecars` copies it to the output directory
+    /// with a Jellyfin-compatible filename after the encode completes.
+    /// `commentary` is intentionally absent — Jellyfin's external filename
+    /// convention has no commentary flag.
+    External {
+        file: PathBuf,
+        format: SourceFormat,
+        lang: Option<String>,
+        title: Option<String>,
+        is_default: bool,
+        is_forced: bool,
+        is_hearing_impaired: bool,
+    },
 }
 
 /// Whether a subtitle source is in ASS/SSA or SRT format.
@@ -85,7 +99,8 @@ pub fn prepare_subtitles(
             continue;
         }
 
-        // Soft-mux path.
+        // Soft and External share the same derivation logic; they diverge only
+        // in which PreparedSubtitle variant is produced at the end.
         let src_fmt = detect_source_format(input, source, probe)?;
 
         if track.filter.is_some() && src_fmt == SourceFormat::Srt {
@@ -164,16 +179,28 @@ pub fn prepare_subtitles(
             }
         };
 
-        prepared.push(PreparedSubtitle::Soft {
-            file,
-            format: fmt,
-            lang: track.lang.clone(),
-            title: track.title.clone(),
-            is_default: track.default == Some(true),
-            is_forced: track.forced == Some(true),
-            is_commentary: track.commentary == Some(true),
-            is_hearing_impaired: track.hearing_impaired == Some(true),
-        });
+        match mux {
+            SubtitleMux::Soft => prepared.push(PreparedSubtitle::Soft {
+                file,
+                format: fmt,
+                lang: track.lang.clone(),
+                title: track.title.clone(),
+                is_default: track.default == Some(true),
+                is_forced: track.forced == Some(true),
+                is_commentary: track.commentary == Some(true),
+                is_hearing_impaired: track.hearing_impaired == Some(true),
+            }),
+            SubtitleMux::External => prepared.push(PreparedSubtitle::External {
+                file,
+                format: fmt,
+                lang: track.lang.clone(),
+                title: track.title.clone(),
+                is_default: track.default == Some(true),
+                is_forced: track.forced == Some(true),
+                is_hearing_impaired: track.hearing_impaired == Some(true),
+            }),
+            SubtitleMux::Burn => unreachable!("handled above"),
+        }
     }
 
     Ok(prepared)
@@ -471,9 +498,295 @@ fn write_to_disk(path: &Path, content: String) -> Result<()> {
     })
 }
 
+// =============================================================================
+// External sidecar writing
+// =============================================================================
+
+/// Build the Jellyfin-compatible sidecar filename for an external subtitle
+/// track: `<output_stem>.<title?>.<lang?>.<flags?>.<ext>`.
+///
+/// Flags in order: `default`, `forced`, `sdh` (hearing-impaired).
+/// Commentary is intentionally excluded — Jellyfin's filename convention has
+/// no commentary flag.
+pub fn build_sidecar_filename(
+    output_stem: &str,
+    format: SourceFormat,
+    title: Option<&str>,
+    lang: Option<&str>,
+    is_default: bool,
+    is_forced: bool,
+    is_hearing_impaired: bool,
+) -> String {
+    let mut parts: Vec<&str> = vec![output_stem];
+    if let Some(t) = title {
+        parts.push(t);
+    }
+    if let Some(l) = lang {
+        parts.push(l);
+    }
+    if is_default {
+        parts.push("default");
+    }
+    if is_forced {
+        parts.push("forced");
+    }
+    if is_hearing_impaired {
+        parts.push("sdh");
+    }
+    let ext = match format {
+        SourceFormat::Srt => "srt",
+        SourceFormat::Ass => "ass",
+    };
+    format!("{}.{}", parts.join("."), ext)
+}
+
+/// Write all `PreparedSubtitle::External` tracks as sidecar files next to the
+/// output video. Called after the ffmpeg encode completes successfully.
+///
+/// The `[output].on_existing` policy is applied to each sidecar independently:
+/// `warn` and `skip_silently` skip the sidecar write; `overwrite` replaces it;
+/// `fail` returns an error for the whole file.
+pub fn write_external_sidecars(
+    prepared_subs: &[PreparedSubtitle],
+    output_path: &Path,
+    on_existing: OnExisting,
+    out: &mut dyn Write,
+) -> Result<()> {
+    let output_stem = output_path
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let output_dir = output_path.parent().unwrap_or(Path::new("."));
+
+    for sub in prepared_subs {
+        let PreparedSubtitle::External {
+            file,
+            format,
+            lang,
+            title,
+            is_default,
+            is_forced,
+            is_hearing_impaired,
+        } = sub
+        else {
+            continue;
+        };
+
+        let sidecar_name = build_sidecar_filename(
+            &output_stem,
+            *format,
+            title.as_deref(),
+            lang.as_deref(),
+            *is_default,
+            *is_forced,
+            *is_hearing_impaired,
+        );
+        let sidecar_path = output_dir.join(&sidecar_name);
+
+        if sidecar_path.exists() {
+            match on_existing {
+                OnExisting::Warn => {
+                    writeln!(
+                        out,
+                        "warning: external subtitle sidecar already exists, skipping: {}",
+                        sidecar_path.display()
+                    )
+                    .map_err(crate::io_render_err)?;
+                    continue;
+                }
+                OnExisting::SkipSilently => continue,
+                OnExisting::Overwrite => {}
+                OnExisting::Fail => return Err(Error::OutputExists { path: sidecar_path }),
+            }
+        }
+
+        std::fs::copy(file, &sidecar_path).map_err(|e| Error::Io {
+            path: sidecar_path.clone(),
+            source: e,
+        })?;
+        writeln!(out, "External subtitle: {}", sidecar_path.display())
+            .map_err(crate::io_render_err)?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // --- build_sidecar_filename ----------------------------------------------
+
+    #[test]
+    fn design_doc_example_filename() {
+        // lang="eng", title="English", default=true, format=srt →
+        // "episode06.English.eng.default.srt"
+        let name = build_sidecar_filename("episode06", SourceFormat::Srt,
+            Some("English"), Some("eng"), true, false, false);
+        assert_eq!(name, "episode06.English.eng.default.srt");
+    }
+
+    #[test]
+    fn sidecar_all_flags() {
+        let name = build_sidecar_filename("ep01", SourceFormat::Ass,
+            Some("Signs"), Some("jpn"), false, true, true);
+        assert_eq!(name, "ep01.Signs.jpn.forced.sdh.ass");
+    }
+
+    #[test]
+    fn sidecar_no_optional_fields() {
+        // No title, no lang, no flags — minimal sidecar name.
+        let name = build_sidecar_filename("ep01", SourceFormat::Srt,
+            None, None, false, false, false);
+        assert_eq!(name, "ep01.srt");
+    }
+
+    #[test]
+    fn sidecar_sdh_not_hi_or_cc() {
+        // DESIGN.md mandates "sdh" (not "hi" or "cc") to avoid hi-as-Hindi ambiguity.
+        let name = build_sidecar_filename("ep01", SourceFormat::Srt,
+            None, Some("eng"), false, false, true);
+        assert_eq!(name, "ep01.eng.sdh.srt");
+        assert!(!name.contains(".hi.") && !name.contains(".cc."));
+    }
+
+    #[test]
+    fn sidecar_flag_order_default_forced_sdh() {
+        // Flags must appear in declaration order: default, forced, sdh.
+        let name = build_sidecar_filename("ep", SourceFormat::Srt,
+            None, None, true, true, true);
+        assert_eq!(name, "ep.default.forced.sdh.srt");
+    }
+
+    // --- write_external_sidecars ---------------------------------------------
+
+    #[test]
+    fn write_external_sidecars_creates_file() {
+        use crate::config::OnExisting;
+        use std::io::Cursor;
+        use tempfile::tempdir;
+
+        let src_dir = tempdir().unwrap();
+        let out_dir = tempdir().unwrap();
+
+        // Write a small temp subtitle file representing a derived track.
+        let temp_sub = src_dir.path().join("track0-derived.srt");
+        std::fs::write(&temp_sub, "1\n00:00:01,000 --> 00:00:02,000\nHello\n\n").unwrap();
+
+        let prepared = vec![PreparedSubtitle::External {
+            file: temp_sub,
+            format: SourceFormat::Srt,
+            lang: Some("eng".into()),
+            title: Some("English".into()),
+            is_default: true,
+            is_forced: false,
+            is_hearing_impaired: false,
+        }];
+
+        let output_path = out_dir.path().join("episode01.mp4");
+        let mut log = Cursor::new(Vec::<u8>::new());
+        write_external_sidecars(&prepared, &output_path, OnExisting::Warn, &mut log).unwrap();
+
+        let expected = out_dir.path().join("episode01.English.eng.default.srt");
+        assert!(expected.exists(), "sidecar file should have been created");
+    }
+
+    #[test]
+    fn write_external_sidecars_warn_on_existing() {
+        use crate::config::OnExisting;
+        use std::io::Cursor;
+        use tempfile::tempdir;
+
+        let src_dir = tempdir().unwrap();
+        let out_dir = tempdir().unwrap();
+
+        let temp_sub = src_dir.path().join("track0-derived.srt");
+        std::fs::write(&temp_sub, "content").unwrap();
+
+        let sidecar = out_dir.path().join("ep.eng.srt");
+        std::fs::write(&sidecar, "old content").unwrap();
+
+        let prepared = vec![PreparedSubtitle::External {
+            file: temp_sub,
+            format: SourceFormat::Srt,
+            lang: Some("eng".into()),
+            title: None,
+            is_default: false,
+            is_forced: false,
+            is_hearing_impaired: false,
+        }];
+
+        let output_path = out_dir.path().join("ep.mp4");
+        let mut log = Cursor::new(Vec::<u8>::new());
+        write_external_sidecars(&prepared, &output_path, OnExisting::Warn, &mut log).unwrap();
+
+        // File should be untouched; log should contain a warning.
+        assert_eq!(std::fs::read_to_string(&sidecar).unwrap(), "old content");
+        let log_str = String::from_utf8(log.into_inner()).unwrap();
+        assert!(log_str.contains("warning"), "expected a warning in log: {}", log_str);
+    }
+
+    #[test]
+    fn write_external_sidecars_overwrite_replaces_file() {
+        use crate::config::OnExisting;
+        use std::io::Cursor;
+        use tempfile::tempdir;
+
+        let src_dir = tempdir().unwrap();
+        let out_dir = tempdir().unwrap();
+
+        let temp_sub = src_dir.path().join("track0-derived.srt");
+        std::fs::write(&temp_sub, "new content").unwrap();
+
+        let sidecar = out_dir.path().join("ep.eng.srt");
+        std::fs::write(&sidecar, "old content").unwrap();
+
+        let prepared = vec![PreparedSubtitle::External {
+            file: temp_sub,
+            format: SourceFormat::Srt,
+            lang: Some("eng".into()),
+            title: None,
+            is_default: false,
+            is_forced: false,
+            is_hearing_impaired: false,
+        }];
+
+        let output_path = out_dir.path().join("ep.mp4");
+        let mut log = Cursor::new(Vec::<u8>::new());
+        write_external_sidecars(&prepared, &output_path, OnExisting::Overwrite, &mut log).unwrap();
+
+        assert_eq!(std::fs::read_to_string(&sidecar).unwrap(), "new content");
+    }
+
+    #[test]
+    fn write_external_sidecars_fail_returns_error() {
+        use crate::config::OnExisting;
+        use std::io::Cursor;
+        use tempfile::tempdir;
+
+        let src_dir = tempdir().unwrap();
+        let out_dir = tempdir().unwrap();
+
+        let temp_sub = src_dir.path().join("track0-derived.srt");
+        std::fs::write(&temp_sub, "content").unwrap();
+
+        let sidecar = out_dir.path().join("ep.eng.srt");
+        std::fs::write(&sidecar, "existing").unwrap();
+
+        let prepared = vec![PreparedSubtitle::External {
+            file: temp_sub,
+            format: SourceFormat::Srt,
+            lang: Some("eng".into()),
+            title: None,
+            is_default: false,
+            is_forced: false,
+            is_hearing_impaired: false,
+        }];
+
+        let output_path = out_dir.path().join("ep.mp4");
+        let mut log = Cursor::new(Vec::<u8>::new());
+        let result = write_external_sidecars(&prepared, &output_path, OnExisting::Fail, &mut log);
+        assert!(matches!(result, Err(crate::error::Error::OutputExists { .. })));
+    }
 
     #[test]
     fn infer_format_recognizes_extensions() {

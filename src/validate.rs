@@ -252,17 +252,17 @@ fn validate_subtitles(subs: &Subtitles, container: Option<Container>, issues: &m
         }
 
         // ASS soft-mux is only supported in MKV containers; MP4 has no ASS
-        // codec (mov_text is SRT-only). This is a hard error so the user
-        // sees it before waiting for a long encode to fail at mux time.
+        // codec (mov_text is SRT-only). External tracks are sidecar files and
+        // are not affected by the container codec restriction.
         if track.format == Some(SubtitleFormat::Ass)
-            && track.mux != Some(SubtitleMux::Burn)
+            && matches!(track.mux, None | Some(SubtitleMux::Soft))
             && effective_container == Container::Mp4
         {
             issues.push(ValidationIssue::error(
                 &path,
                 "format=\"ass\" mux=\"soft\" is not supported in MP4 containers \
-                 (MP4 uses mov_text, an SRT-only codec). Use container=\"mkv\" \
-                 or change format to \"srt\".",
+                 (MP4 uses mov_text, an SRT-only codec). Use container=\"mkv\", \
+                 change format to \"srt\", or use mux=\"external\".",
             ));
         }
 
@@ -292,6 +292,66 @@ fn validate_subtitles(subs: &Subtitles, container: Option<Container>, issues: &m
                 burn_count
             ),
         ));
+    }
+
+    // External tracks must produce unique sidecar filenames within this config.
+    // The filename is <output_stem>.<key>, so uniqueness reduces to key uniqueness.
+    validate_external_sidecar_uniqueness(tracks, issues);
+}
+
+fn validate_external_sidecar_uniqueness(
+    tracks: &[SubtitleTrack],
+    issues: &mut Vec<ValidationIssue>,
+) {
+    let mut seen: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    for (i, track) in tracks.iter().enumerate() {
+        if track.mux != Some(SubtitleMux::External) {
+            continue;
+        }
+        let key = external_sidecar_key(track);
+        if let Some(&prev) = seen.get(&key) {
+            issues.push(ValidationIssue::error(
+                format!("subtitles.tracks[{}]", i),
+                format!(
+                    "external subtitle track would produce the same sidecar filename as \
+                     subtitles.tracks[{}] (both resolve to `<stem>.{}`); \
+                     give them distinct title, lang, or disposition values.",
+                    prev, key,
+                ),
+            ));
+        } else {
+            seen.insert(key, i);
+        }
+    }
+}
+
+/// The portion of the sidecar filename after the output stem:
+/// `<title?>.<lang?>.<flags?>.<ext>`. Used for duplicate detection.
+fn external_sidecar_key(track: &SubtitleTrack) -> String {
+    let mut parts: Vec<&str> = Vec::new();
+    if let Some(t) = &track.title {
+        parts.push(t.as_str());
+    }
+    if let Some(l) = &track.lang {
+        parts.push(l.as_str());
+    }
+    if track.default == Some(true) {
+        parts.push("default");
+    }
+    if track.forced == Some(true) {
+        parts.push("forced");
+    }
+    if track.hearing_impaired == Some(true) {
+        parts.push("sdh");
+    }
+    let ext = match track.format {
+        Some(SubtitleFormat::Ass) => "ass",
+        _ => "srt",
+    };
+    if parts.is_empty() {
+        ext.to_string()
+    } else {
+        format!("{}.{}", parts.join("."), ext)
     }
 }
 
@@ -635,6 +695,93 @@ tracks = [
 ]
 "#);
         assert!(!warnings(&issues).iter().any(|w| w.message.contains("burn subtitle track")));
+    }
+
+    // --- External subtitle tracks ------------------------------------------
+
+    #[test]
+    fn external_ass_in_mp4_is_allowed() {
+        // External tracks are sidecar files; they're not affected by the
+        // container codec restriction that bars soft ASS in MP4.
+        let issues = check(r#"
+[output]
+container = "mp4"
+
+[subtitles]
+tracks = [
+    { source = 1, format = "ass", mux = "external", lang = "eng", default = true },
+]
+"#);
+        assert!(
+            !errors(&issues).iter().any(|e| e.message.contains("format=\"ass\"")),
+            "external ASS in MP4 should not be an error: {:?}",
+            errors(&issues)
+        );
+    }
+
+    #[test]
+    fn soft_ass_in_mp4_still_errors() {
+        let issues = check(r#"
+[output]
+container = "mp4"
+
+[subtitles]
+tracks = [
+    { source = 1, format = "ass", mux = "soft", lang = "eng", default = true },
+]
+"#);
+        assert!(
+            errors(&issues).iter().any(|e| e.message.contains("format=\"ass\"")),
+            "soft ASS in MP4 should still error"
+        );
+    }
+
+    #[test]
+    fn external_duplicate_sidecar_names_errors() {
+        let issues = check(r#"
+[subtitles]
+tracks = [
+    { source = 1, format = "srt", mux = "external", lang = "eng", title = "English", default = true },
+    { source = 2, format = "srt", mux = "external", lang = "eng", title = "English", default = true },
+]
+"#);
+        let errs = errors(&issues);
+        assert!(
+            errs.iter().any(|e| e.message.contains("same sidecar filename")),
+            "duplicate external names should error: {:?}", errs
+        );
+    }
+
+    #[test]
+    fn external_unique_sidecar_names_ok() {
+        // Two external tracks that differ only by title → unique filenames.
+        let issues = check(r#"
+[subtitles]
+tracks = [
+    { source = 1, format = "srt", mux = "external", lang = "eng", title = "English", default = true },
+    { source = 2, format = "srt", mux = "external", lang = "eng", title = "English SDH", hearing_impaired = true },
+]
+"#);
+        assert!(
+            !errors(&issues).iter().any(|e| e.message.contains("sidecar")),
+            "unique external names should not error: {:?}", errors(&issues)
+        );
+    }
+
+    #[test]
+    fn external_tracks_parse_from_toml() {
+        // Smoke-test that mux = "external" round-trips through the config parser.
+        let cfg = crate::config::Config::from_toml_str(r#"
+[subtitles]
+tracks = [
+    { source = 1, format = "srt", mux = "external", lang = "eng", default = true },
+    { source = 2, format = "ass", mux = "burn" },
+]
+"#).unwrap();
+        use crate::config::SubtitleMux;
+        let tracks = cfg.subtitles.tracks.unwrap();
+        assert_eq!(tracks[0].mux, Some(SubtitleMux::External));
+        assert_eq!(tracks[1].mux, Some(SubtitleMux::Burn));
     }
 
     // --- Clean configs produce no errors -----------------------------------
