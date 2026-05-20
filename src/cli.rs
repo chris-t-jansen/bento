@@ -7,6 +7,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 
 use crate::config::OnExisting;
 use crate::error::{Error, Result};
+use crate::verbosity::Verbosity;
 
 #[derive(Parser)]
 #[command(
@@ -58,6 +59,16 @@ pub enum Command {
         /// Values: `warn`, `skip-silently`, `overwrite`, `fail`.
         #[arg(long = "on-existing", value_name = "VALUE")]
         on_existing: Option<OnExistingArg>,
+
+        /// Enable verbose output: print the ffmpeg command line before each
+        /// encode and pass ffmpeg's full output through to the terminal.
+        #[arg(short = 'v', long = "verbose", conflicts_with = "quiet")]
+        verbose: bool,
+
+        /// Suppress per-file progress; show only the end-of-batch summary and
+        /// any errors.
+        #[arg(short = 'q', long = "quiet", conflicts_with = "verbose")]
+        quiet: bool,
     },
     /// Resolve and print the full config for a file or directory, with provenance.
     Config { path: PathBuf },
@@ -82,16 +93,26 @@ pub fn run() -> Result<()> {
             output_dir,
             overwrite,
             on_existing,
+            verbose,
+            quiet,
         } => {
             let on_existing_override = if overwrite {
                 Some(OnExisting::Overwrite)
             } else {
                 on_existing.map(OnExisting::from)
             };
+            let verbosity = if verbose {
+                Verbosity::Verbose
+            } else if quiet {
+                Verbosity::Quiet
+            } else {
+                Verbosity::Default
+            };
             crate::pipeline::run_convert(
                 &path,
                 output_dir.as_deref(),
                 on_existing_override,
+                verbosity,
                 &mut stdout,
             )
         }

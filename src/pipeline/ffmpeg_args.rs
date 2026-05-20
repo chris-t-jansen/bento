@@ -93,8 +93,6 @@ pub fn build_ffmpeg_args(
     let mut args: Vec<String> = Vec::new();
 
     args.push("-y".into());
-    args.push("-loglevel".into());
-    args.push("error".into());
 
     // --- Inputs ---------------------------------------------------------------
     args.push("-i".into());
@@ -649,6 +647,7 @@ mod tests {
             video: VideoStreamInfo { width: 1920, height: 1080 },
             audio: Vec::new(),
             subtitles: Vec::new(),
+            duration_secs: None,
         };
         let vf = build_video_filters(&config, &probe, &[], None);
         assert_eq!(vf, "yadif,hqdn3d=3:2:6:4.5");
