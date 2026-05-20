@@ -30,11 +30,14 @@ Foundation pieces that are working end-to-end. Most have at least light test cov
 - Section-level cascade of per-track defaults for audio/subtitles — DESIGN.md §Audio / §Subtitles. (Cascade resolved; not yet fully consumed by encoder args.)
 - Cross-field validation: CRF/codec coupling, tune validity, `default = true` uniqueness, subtitle filter/subtract mutual exclusion — DESIGN.md §Validation. (`validate.rs`.)
 - Validation issue reporting with severity, dotted path, and message — DESIGN.md §Errors & warnings.
+- **Baked-in defaults layer** — DESIGN.md §Defaults. `baked_defaults()` in `resolve.rs` is fully populated; resolution falls through to built-in values correctly. (`resolve.rs`.)
+- **Global config bootstrap template** — DESIGN.md §Bootstrap. Template in `bootstrap.rs` is comprehensive and is invoked by `bento check [-y]` via `ensure_global_config`. (`bootstrap.rs`, `layers.rs`, `cli.rs`.)
 
 ### CLI surface
 - `bento convert <path> [output_dir]` for both single-file and directory mode — DESIGN.md §CLI.
 - `bento config <path>` resolves and prints config with per-layer provenance — DESIGN.md §CLI. (`render.rs`.)
 - `--overwrite` / `-f` shorthand and `--on-existing={warn,skip-silently,overwrite,fail}` — DESIGN.md §CLI flags.
+- `--verbose` / `-v` and `--quiet` / `-q` verbosity flags — DESIGN.md §CLI flags. (`cli.rs`, `verbosity.rs`.)
 
 ### Schema parsing (parsed and merged, even if not all are wired into the encoder yet)
 - `[output]` — container, destination, preserve_chapters, on_existing, metadata block, naming block.
@@ -43,7 +46,8 @@ Foundation pieces that are working end-to-end. Most have at least light test cov
 - `[subtitles]` — per-track routing, warn flags, filter spec, soft-track metadata fields.
 
 ### Pipeline
-- Source probing via ffmpeg: stream enumeration and crop detection — DESIGN.md §Probe. (`pipeline/probe.rs`.)
+- Source probing via ffmpeg: stream enumeration, duration extraction, and crop detection — DESIGN.md §Probe. (`pipeline/probe.rs`.)
+- Real-time progress feedback during encode: spinner (unknown duration) or progress bar (known duration) with per-file status lines (✓/–/✗ with color); multi-line unified display (filename, config-layer summary, and bar/elapsed as a single visual entry); unified pre-encode header listing files (same format for single-file and directory mode); blank-line spacing between files and before batch summary; uses `indicatif` + `console`. (`progress.rs`, `pipeline/mod.rs`.)
 - Per-file error handling with batch-continue + end-of-batch summary — DESIGN.md §Batch behavior. (`pipeline/mod.rs`.)
 - Audio copy-vs-transcode decision tree — DESIGN.md §Audio actions. (`pipeline/ffmpeg_args.rs`.)
 - ffmpeg arg construction for video encoder, preset, tune, CRF, crop (pixels), deinterlace, detelecine, denoise, resolution/scale — DESIGN.md §Video. (`pipeline/ffmpeg_args.rs`.)
@@ -63,9 +67,10 @@ Foundation pieces that are working end-to-end. Most have at least light test cov
 Features with substantive code in place but missing wiring, edge cases, or the last mile to be usable end-to-end.
 
 ### Configuration
-- **Baked-in defaults layer** — DESIGN.md §Defaults. Defaults layer plumbing exists in `resolve.rs` but the actual default *values* aren't populated; resolution currently relies on a global config being present.
-- **Global config bootstrap template** — DESIGN.md §Bootstrap. Template text in `bootstrap.rs` is comprehensive; **not yet invoked** by any command (waiting on `bento check`).
 - **Required-field detection** — DESIGN.md §Validation. `audio.tracks` is checked; no general mechanism yet for other conditionally-required fields (e.g., naming template requiring metadata).
+
+### Deferred subcommands
+- **`bento check [-y]`** — DESIGN.md §`bento check`. Global config bootstrap is fully wired (prompts, `-y` auto-confirm, generates template). ffmpeg presence/version detection and optional binary download not yet implemented; a placeholder note is printed in their place. (`cli.rs`, `layers.rs`.)
 
 ---
 
@@ -74,7 +79,6 @@ Features with substantive code in place but missing wiring, edge cases, or the l
 Listed in rough priority order: MVP-completion items first, then UX/control flags, then deferred subcommands.
 
 ### CLI control & visibility flags
-- `--verbose` / `--quiet` verbosity levels — DESIGN.md §CLI flags.
 - `--no-warn-X` family + `--no-warnings` suppression flags — DESIGN.md §Warning suppression.
 - `--dry-run` / `-n` plan-without-write mode — DESIGN.md §CLI flags.
 - `--keep-intermediates` to preserve the temp dir — DESIGN.md §CLI flags.
@@ -82,8 +86,7 @@ Listed in rough priority order: MVP-completion items first, then UX/control flag
 - `--set KEY=VALUE` generic dotted-path overrides — DESIGN.md §CLI flags.
 
 ### Deferred subcommands
-- **`bento check [-y]`** — ffmpeg presence + version detection, global config bootstrap, optional binary download — DESIGN.md §`bento check`. (`cli.rs:79` is a stub.)
-- **`bento repair`** — insert missing fields into an existing global config — DESIGN.md §`bento repair`. (`cli.rs:98` is `unimplemented!`.)
+- **`bento repair`** — insert missing fields into an existing global config — DESIGN.md §`bento repair`. (`cli.rs` dispatches to `unimplemented!`.)
 
 ---
 
@@ -107,4 +110,4 @@ Things in the code that don't cleanly map back to DESIGN.md, or design decisions
 
 ---
 
-*Last updated: 2026-05-19.*
+*Last updated: 2026-05-20. Session: unified pre-encode header for single-file and directory modes; multi-line progress display with config-layer summary integrated as a visual unit with the bar/spinner; blank-line spacing between files and before batch summary; promoted two stale In Progress items (baked-in defaults, global config bootstrap) to Done; moved `bento check` from Not Started to In Progress.*

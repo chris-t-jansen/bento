@@ -10,6 +10,7 @@ use bento::{
     error::Error,
     pipeline::run_convert,
     render::run_config,
+    verbosity::Verbosity,
 };
 
 // ---------------------------------------------------------------------------
@@ -205,6 +206,7 @@ fn run_convert_errors_on_missing_input() {
         Path::new("/nonexistent/episode.mkv"),
         None,
         None,
+        Verbosity::Default,
         &mut out,
     );
     assert!(matches!(result, Err(Error::PathNotFound(_))));
@@ -222,7 +224,7 @@ container = "mkv"
 "#,
     );
     let mut out = buf();
-    let result = run_convert(&video, None, None, &mut out);
+    let result = run_convert(&video, None, None, Verbosity::Default, &mut out);
     assert!(
         matches!(result, Err(Error::RequiredFieldMissing { ref field, .. }) if field == "audio.tracks"),
         "expected RequiredFieldMissing(audio.tracks), got: {:?}",
@@ -248,7 +250,7 @@ tracks = [{ source = 1 }]
 "#,
     );
     let mut out = buf();
-    let result = run_convert(&video, None, None, &mut out);
+    let result = run_convert(&video, None, None, Verbosity::Default, &mut out);
     assert!(
         matches!(result, Err(Error::OutputExists { .. })),
         "expected OutputExists, got: {:?}",
@@ -273,7 +275,7 @@ tracks = [{ source = 1 }]
 "#,
     );
     let mut out = buf();
-    let result = run_convert(&video, None, None, &mut out);
+    let result = run_convert(&video, None, None, Verbosity::Default, &mut out);
     assert!(result.is_ok(), "skip_silently should return Ok: {:?}", result);
 }
 
@@ -294,7 +296,7 @@ tracks = [{ source = 1 }]
 "#,
     );
     let mut out = buf();
-    let result = run_convert(&video, None, None, &mut out);
+    let result = run_convert(&video, None, None, Verbosity::Default, &mut out);
     assert!(result.is_ok(), "warn mode should skip and return Ok: {:?}", result);
     let text = String::from_utf8(out).unwrap();
     assert!(

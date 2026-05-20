@@ -10,6 +10,8 @@ pub struct SourceProbe {
     pub video: VideoStreamInfo,
     pub audio: Vec<AudioStreamInfo>,
     pub subtitles: Vec<SubtitleStreamInfo>,
+    /// Total media duration in seconds, if ffprobe can determine it.
+    pub duration_secs: Option<f64>,
 }
 
 #[derive(Debug, Default)]
@@ -43,13 +45,14 @@ impl SourceProbe {
     }
 }
 
-/// Run one `ffprobe -show_streams -of json` call and return parsed stream info.
+/// Run one `ffprobe -show_streams -show_format -of json` call and return parsed stream info.
 pub fn probe_source_streams(input: &Path) -> Result<SourceProbe> {
     let output = std::process::Command::new("ffprobe")
         .args([
             "-v",
             "error",
             "-show_streams",
+            "-show_format",
             "-of",
             "json",
             &input.display().to_string(),
@@ -121,10 +124,16 @@ pub fn probe_source_streams(input: &Path) -> Result<SourceProbe> {
         }
     }
 
+    let duration_secs = json["format"]["duration"]
+        .as_str()
+        .and_then(|s| s.parse::<f64>().ok())
+        .filter(|&d| d > 0.0);
+
     Ok(SourceProbe {
         video,
         audio,
         subtitles,
+        duration_secs,
     })
 }
 
