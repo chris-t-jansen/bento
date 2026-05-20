@@ -34,6 +34,9 @@ pub enum Error {
     #[error("{count} file(s) failed in batch (see output above)")]
     BatchFailed { count: usize },
 
+    #[error("{count} dependency check(s) failed (see above)")]
+    CheckFailed { count: usize },
+
     #[error("non-interactive context (no TTY); rerun with --yes to auto-confirm")]
     NotInteractive,
 
