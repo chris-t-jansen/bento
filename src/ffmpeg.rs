@@ -117,28 +117,9 @@ fn query_version(name: &str) -> Option<Option<Version>> {
     }
 }
 
-/// Find the resolved filesystem path of `name` via `which` (Unix) / `where`
-/// (Windows). Returns `None` if the lookup fails — the binary may still be
-/// usable via `PATH` even if the path is unknown.
+/// Find the resolved filesystem path of `name` by searching `PATH`.
 fn find_path(name: &str) -> Option<PathBuf> {
-    let which_cmd = if cfg!(windows) { "where" } else { "which" };
-    let output = Command::new(which_cmd)
-        .arg(name)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .output()
-        .ok()?;
-
-    if !output.status.success() {
-        return None;
-    }
-
-    let s = String::from_utf8_lossy(&output.stdout);
-    let first_line = s.lines().next()?.trim();
-    if first_line.is_empty() {
-        return None;
-    }
-    Some(PathBuf::from(first_line))
+    which::which(name).ok()
 }
 
 // ---------------------------------------------------------------------------
