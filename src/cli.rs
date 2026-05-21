@@ -57,6 +57,14 @@ pub enum Command {
         #[arg(short = 'n', long = "dry-run")]
         dry_run: bool,
 
+        /// Write the CLI overrides to a sidecar config file instead of passing
+        /// them on every run. For a file target writes `<file>.bento.toml`; for
+        /// a directory target writes `<dir>/bento.toml`. The encode still runs.
+        /// Errors if no CLI overrides are present (nothing to write). Warns and
+        /// skips (without overwriting) if the target file already exists.
+        #[arg(long = "generate-config")]
+        generate_config: bool,
+
         /// Keep the temp directory after the run completes instead of deleting it.
         /// Prints the preserved path at the end. Silent no-op under --dry-run.
         #[arg(long = "keep-intermediates")]
@@ -141,6 +149,7 @@ pub fn run() -> Result<()> {
             path,
             output_dir,
             dry_run,
+            generate_config,
             keep_intermediates,
             overwrite,
             on_existing,
@@ -181,6 +190,7 @@ pub fn run() -> Result<()> {
                 &path,
                 output_dir.as_deref(),
                 on_existing_override,
+                generate_config,
                 dry_run,
                 verbosity,
                 warn_flags,

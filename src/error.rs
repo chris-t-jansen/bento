@@ -92,6 +92,12 @@ pub enum Error {
          expected `0N` for zero-padded width N (e.g. `:02`)"
     )]
     NamingUnknownFormatSpec { var: String, spec: String },
+
+    #[error(
+        "--generate-config requires at least one CLI override to write; \
+         pass --on-existing, a --no-warn-* flag, or (once implemented) --set KEY=VALUE"
+    )]
+    GenerateConfigNoOverrides,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

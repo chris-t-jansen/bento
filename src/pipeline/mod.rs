@@ -59,6 +59,7 @@ pub fn run_convert(
     input: &Path,
     output_dir_override: Option<&Path>,
     on_existing_override: Option<OnExisting>,
+    generate_config: bool,
     dry_run: bool,
     verbosity: Verbosity,
     warn_flags: WarnFlags,
@@ -67,6 +68,46 @@ pub fn run_convert(
 ) -> Result<()> {
     if !input.exists() {
         return Err(Error::PathNotFound(input.to_path_buf()));
+    }
+
+    // Build the CLI layer config from explicit CLI overrides. This is used both
+    // for --generate-config sidecar writing and for adding to the resolution stack.
+    let cli_config = build_cli_config(on_existing_override, warn_flags);
+    let cli_config_is_empty = cli_config == Config::default();
+
+    // --generate-config requires at least one override to write.
+    if generate_config && cli_config_is_empty {
+        return Err(Error::GenerateConfigNoOverrides);
+    }
+
+    // Compute the sidecar path once (file → <file>.bento.toml, dir → <dir>/bento.toml).
+    let sidecar_path: Option<PathBuf> = if generate_config {
+        Some(if input.is_dir() {
+            input.join("bento.toml")
+        } else {
+            crate::layers::sidecar_path(input)
+        })
+    } else {
+        None
+    };
+
+    // Handle sidecar write (or dry-run announcement) before encoding starts.
+    if let Some(ref sp) = sidecar_path {
+        if dry_run {
+            writeln!(out, "Would write sidecar at: {}", sp.display())
+                .map_err(crate::io_render_err)?;
+            writeln!(out).map_err(crate::io_render_err)?;
+        } else if sp.exists() {
+            writeln!(
+                out,
+                "warning: --generate-config: sidecar already exists, not overwriting: {}",
+                sp.display()
+            )
+            .map_err(crate::io_render_err)?;
+        } else {
+            write_sidecar(&cli_config, sp, out)?;
+            writeln!(out, "Wrote config to: {}", sp.display()).map_err(crate::io_render_err)?;
+        }
     }
 
     // Per-run temp dir — held here so it outlives all file processing.
@@ -85,10 +126,9 @@ pub fn run_convert(
         run_convert_directory(
             input,
             output_dir_override,
-            on_existing_override,
+            &cli_config,
             dry_run,
             verbosity,
-            warn_flags,
             temp_root,
             out,
         )
@@ -102,10 +142,9 @@ pub fn run_convert(
             1,
             1,
             output_dir_override,
-            on_existing_override,
+            &cli_config,
             dry_run,
             verbosity,
-            warn_flags,
             temp_root,
             out,
         );
@@ -146,10 +185,9 @@ pub fn run_convert(
 fn run_convert_directory(
     input_dir: &Path,
     output_dir_override: Option<&Path>,
-    on_existing_override: Option<OnExisting>,
+    cli_config: &Config,
     dry_run: bool,
     verbosity: Verbosity,
-    warn_flags: WarnFlags,
     temp_root: Option<&Path>,
     out: &mut dyn Write,
 ) -> Result<()> {
@@ -182,10 +220,9 @@ fn run_convert_directory(
             idx + 1,
             file_count,
             output_dir_override,
-            on_existing_override,
+            cli_config,
             dry_run,
             verbosity,
-            warn_flags,
             temp_root,
             out,
         ) {
@@ -223,13 +260,14 @@ fn run_convert_file(
     file_idx: usize,
     file_count: usize,
     output_dir_override: Option<&Path>,
-    on_existing_override: Option<OnExisting>,
+    cli_config: &Config,
     dry_run: bool,
     verbosity: Verbosity,
-    warn_flags: WarnFlags,
     temp_root: Option<&Path>, // None iff dry_run
     out: &mut dyn Write,
 ) -> Result<()> {
+    use crate::resolve::Layer;
+
     // input_name is used in the layer-count summary and throughout; compute early.
     let input_name = input
         .file_name()
@@ -237,9 +275,12 @@ fn run_convert_file(
         .unwrap_or_else(|| input.display().to_string());
 
     // --- Config resolution and validation ------------------------------------
-    let layers = discover_layers(input, out)?;
-    let mut resolved = resolve(layers);
-    apply_warn_overrides(&mut resolved.config, warn_flags);
+    // Add the CLI layer at the top of the stack if any CLI overrides were set.
+    let mut layers = discover_layers(input, out)?;
+    if cli_config != &Config::default() {
+        layers.push((Layer::Cli, cli_config.clone()));
+    }
+    let resolved = resolve(layers);
     let issues = validate(&resolved);
 
     let error_count = issues
@@ -281,14 +322,22 @@ fn run_convert_file(
     let config_summary = if verbosity == Verbosity::Default {
         let counts = resolved.provenance.count_by_kind();
         let total = resolved.provenance.len();
+        let cli_n = counts.get("cli").copied().unwrap_or(0);
         let per_file_n = counts.get("per-file").copied().unwrap_or(0);
         let directory_n = counts.get("directory").copied().unwrap_or(0);
         let global_n = counts.get("global").copied().unwrap_or(0);
         let defaults_n = counts.get("defaults").copied().unwrap_or(0);
-        format!(
-            "{} settings ({} from file, {} from directory, {} from global, {} from baked-in defaults)",
-            total, per_file_n, directory_n, global_n, defaults_n,
-        )
+        if cli_n > 0 {
+            format!(
+                "{} settings ({} from cli, {} from file, {} from directory, {} from global, {} from baked-in defaults)",
+                total, cli_n, per_file_n, directory_n, global_n, defaults_n,
+            )
+        } else {
+            format!(
+                "{} settings ({} from file, {} from directory, {} from global, {} from baked-in defaults)",
+                total, per_file_n, directory_n, global_n, defaults_n,
+            )
+        }
     } else {
         String::new()
     };
@@ -299,9 +348,8 @@ fn run_convert_file(
     let (output_path, episode_number) =
         compute_output_path(input, &resolved.config, output_dir_override, dry_run)?;
 
-    let on_existing = on_existing_override
-        .or(resolved.config.output.on_existing)
-        .unwrap_or(OnExisting::Warn);
+    // on_existing is resolved through the full layer stack (CLI layer included).
+    let on_existing = resolved.config.output.on_existing.unwrap_or(OnExisting::Warn);
 
     let output_name = output_path
         .file_name()
@@ -442,10 +490,16 @@ fn run_convert_file(
     Ok(())
 }
 
-/// Apply CLI-level warn flag overrides to the resolved config.  Called after
-/// resolution and before validation so every warning check sees the final state.
-fn apply_warn_overrides(config: &mut Config, flags: WarnFlags) {
+/// Build a Config representing only the fields explicitly set by CLI flags.
+/// This becomes the `Layer::Cli` entry added to the resolution stack, and is
+/// also what `--generate-config` serializes to the sidecar file.
+fn build_cli_config(on_existing_override: Option<OnExisting>, flags: WarnFlags) -> Config {
+    let mut config = Config::default();
     let suppress_all = flags.no_warnings;
+
+    if let Some(oe) = on_existing_override {
+        config.output.on_existing = Some(oe);
+    }
     if suppress_all || flags.no_warn_multiple_burns {
         config.subtitles.warn_multiple_burns = Some(false);
     }
@@ -462,8 +516,75 @@ fn apply_warn_overrides(config: &mut Config, flags: WarnFlags) {
     if suppress_all || flags.no_warn_crf_codec_mismatch {
         config.video.warn_crf_codec_mismatch = Some(false);
     }
-    // no_warn_missing and no_warn_redundant are accepted but currently no-ops:
-    // those runtime warnings are not yet emitted.
+    // no_warn_missing and no_warn_redundant are accepted but have no Config
+    // counterparts yet; they remain CLI-only no-ops for now.
+    config
+}
+
+/// Write the CLI-override config to a sidecar file, stripping empty sections
+/// so only the fields that were actually set appear in the output.
+fn write_sidecar(cli_config: &Config, path: &Path, out: &mut dyn Write) -> Result<()> {
+    use std::io::Write as _;
+
+    let value = toml::Value::try_from(cli_config).expect("Config is always serializable");
+    let toml_str = match clean_empty_tables(value) {
+        Some(cleaned) => {
+            toml::to_string_pretty(&cleaned).expect("cleaned Value always serializes")
+        }
+        None => String::new(),
+    };
+
+    // Ensure the parent directory exists (e.g. when writing a dir-level bento.toml
+    // into a directory that hasn't been created yet — rare but possible).
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() && !parent.exists() {
+            std::fs::create_dir_all(parent).map_err(|e| Error::Io {
+                path: parent.to_path_buf(),
+                source: e,
+            })?;
+        }
+    }
+
+    let mut file = std::fs::File::create(path).map_err(|e| Error::Io {
+        path: path.to_path_buf(),
+        source: e,
+    })?;
+    writeln!(file, "# Generated by `bento convert --generate-config`.").map_err(|e| Error::Io {
+        path: path.to_path_buf(),
+        source: e,
+    })?;
+    writeln!(file, "# Contains only the settings overridden via CLI flags.").map_err(|e| Error::Io {
+        path: path.to_path_buf(),
+        source: e,
+    })?;
+    if !toml_str.is_empty() {
+        writeln!(file, "{}", toml_str.trim_end()).map_err(|e| Error::Io {
+            path: path.to_path_buf(),
+            source: e,
+        })?;
+    }
+    let _ = out; // reserved for future verbose output
+    Ok(())
+}
+
+/// Recursively remove empty tables from a `toml::Value`, returning `None` if
+/// the value reduces to nothing. Ensures `--generate-config` output only
+/// contains sections that actually have content.
+fn clean_empty_tables(value: toml::Value) -> Option<toml::Value> {
+    match value {
+        toml::Value::Table(table) => {
+            let cleaned: toml::map::Map<String, toml::Value> = table
+                .into_iter()
+                .filter_map(|(k, v)| clean_empty_tables(v).map(|v| (k, v)))
+                .collect();
+            if cleaned.is_empty() {
+                None
+            } else {
+                Some(toml::Value::Table(cleaned))
+            }
+        }
+        other => Some(other),
+    }
 }
 
 fn run_ffmpeg_encode(
