@@ -212,6 +212,7 @@ fn run_convert_errors_on_missing_input() {
         Verbosity::Default,
         WarnFlags::default(),
         false,
+        &[],
         &mut out,
     );
     assert!(matches!(result, Err(Error::PathNotFound(_))));
@@ -238,6 +239,7 @@ container = "mkv"
         Verbosity::Default,
         WarnFlags::default(),
         false,
+        &[],
         &mut out,
     );
     assert!(
@@ -273,6 +275,7 @@ tracks = [{ source = 1 }]
         Verbosity::Default,
         WarnFlags::default(),
         false,
+        &[],
         &mut out,
     );
     assert!(
@@ -308,6 +311,7 @@ tracks = [{ source = 1 }]
         Verbosity::Default,
         WarnFlags::default(),
         false,
+        &[],
         &mut out,
     );
     assert!(result.is_ok(), "skip_silently should return Ok: {:?}", result);
@@ -339,6 +343,7 @@ tracks = [{ source = 1 }]
         Verbosity::Default,
         WarnFlags::default(),
         false,
+        &[],
         &mut out,
     );
     assert!(result.is_ok(), "warn mode should skip and return Ok: {:?}", result);
@@ -379,6 +384,7 @@ tracks = [{ source = 1, lang = "jpn", title = "Japanese", default = true }]
         Verbosity::Default,
         WarnFlags::default(),
         false,
+        &[],
         &mut out,
     );
     let text = String::from_utf8(out).unwrap();
@@ -419,6 +425,7 @@ container = "mkv"
         Verbosity::Default,
         WarnFlags::default(),
         false,
+        &[],
         &mut out,
     );
     let text = String::from_utf8(out).unwrap();
@@ -463,6 +470,7 @@ tracks = [{ source = 1, lang = "jpn", default = true }]
         Verbosity::Default,
         WarnFlags::default(),
         false,
+        &[],
         &mut out,
     );
     match result {
@@ -491,6 +499,7 @@ fn dry_run_summary_footer_suppressed_in_quiet_mode() {
         Verbosity::Quiet,
         WarnFlags::default(),
         false,
+        &[],
         &mut out,
     );
     let text = String::from_utf8(out).unwrap();
@@ -516,6 +525,7 @@ fn dry_run_summary_footer_shown_in_default_mode() {
         Verbosity::Default,
         WarnFlags::default(),
         false,
+        &[],
         &mut out,
     );
     let text = String::from_utf8(out).unwrap();
@@ -563,6 +573,7 @@ tracks = [
         Verbosity::Default,
         WarnFlags::default(),
         false,
+        &[],
         &mut out,
     );
     let text = String::from_utf8(out).unwrap();
@@ -665,7 +676,7 @@ fn no_warn_multiple_burns_suppresses_warning() {
 
     // Without suppression: warning is present.
     let mut out = buf();
-    let _ = run_convert(&video, None, None, false, false, Verbosity::Default, WarnFlags::default(), false, &mut out);
+    let _ = run_convert(&video, None, None, false, false, Verbosity::Default, WarnFlags::default(), false, &[], &mut out);
     let text = String::from_utf8(out).unwrap();
     assert!(
         text.contains("subtitle tracks have mux=\"burn\""),
@@ -684,6 +695,7 @@ fn no_warn_multiple_burns_suppresses_warning() {
         Verbosity::Default,
         WarnFlags { no_warn_multiple_burns: true, ..WarnFlags::default() },
         false,
+        &[],
         &mut out,
     );
     let text = String::from_utf8(out).unwrap();
@@ -701,7 +713,7 @@ fn no_warn_burn_metadata_suppresses_warning() {
     dir.write("bento.toml", burn_metadata_toml());
 
     let mut out = buf();
-    let _ = run_convert(&video, None, None, false, false, Verbosity::Default, WarnFlags::default(), false, &mut out);
+    let _ = run_convert(&video, None, None, false, false, Verbosity::Default, WarnFlags::default(), false, &[], &mut out);
     let text = String::from_utf8(out).unwrap();
     assert!(
         text.contains("burn subtitle track has soft-only metadata"),
@@ -719,6 +731,7 @@ fn no_warn_burn_metadata_suppresses_warning() {
         Verbosity::Default,
         WarnFlags { no_warn_burn_metadata: true, ..WarnFlags::default() },
         false,
+        &[],
         &mut out,
     );
     let text = String::from_utf8(out).unwrap();
@@ -736,7 +749,7 @@ fn no_warn_no_default_suppresses_audio_warning() {
     dir.write("bento.toml", audio_no_default_toml());
 
     let mut out = buf();
-    let _ = run_convert(&video, None, None, false, false, Verbosity::Default, WarnFlags::default(), false, &mut out);
+    let _ = run_convert(&video, None, None, false, false, Verbosity::Default, WarnFlags::default(), false, &[], &mut out);
     let text = String::from_utf8(out).unwrap();
     assert!(
         text.contains("no audio track has default=true"),
@@ -754,6 +767,7 @@ fn no_warn_no_default_suppresses_audio_warning() {
         Verbosity::Default,
         WarnFlags { no_warn_no_default: true, ..WarnFlags::default() },
         false,
+        &[],
         &mut out,
     );
     let text = String::from_utf8(out).unwrap();
@@ -771,7 +785,7 @@ fn no_warn_no_default_suppresses_subtitle_warning() {
     dir.write("bento.toml", subtitle_no_default_toml());
 
     let mut out = buf();
-    let _ = run_convert(&video, None, None, false, false, Verbosity::Default, WarnFlags::default(), false, &mut out);
+    let _ = run_convert(&video, None, None, false, false, Verbosity::Default, WarnFlags::default(), false, &[], &mut out);
     let text = String::from_utf8(out).unwrap();
     assert!(
         text.contains("no subtitle track has default=true"),
@@ -789,6 +803,7 @@ fn no_warn_no_default_suppresses_subtitle_warning() {
         Verbosity::Default,
         WarnFlags { no_warn_no_default: true, ..WarnFlags::default() },
         false,
+        &[],
         &mut out,
     );
     let text = String::from_utf8(out).unwrap();
@@ -806,7 +821,7 @@ fn no_warn_crf_codec_mismatch_suppresses_warning() {
     dir.write("bento.toml", crf_mismatch_toml());
 
     let mut out = buf();
-    let _ = run_convert(&video, None, None, false, false, Verbosity::Default, WarnFlags::default(), false, &mut out);
+    let _ = run_convert(&video, None, None, false, false, Verbosity::Default, WarnFlags::default(), false, &[], &mut out);
     let text = String::from_utf8(out).unwrap();
     assert!(
         text.contains("encoder.crf"),
@@ -824,6 +839,7 @@ fn no_warn_crf_codec_mismatch_suppresses_warning() {
         Verbosity::Default,
         WarnFlags { no_warn_crf_codec_mismatch: true, ..WarnFlags::default() },
         false,
+        &[],
         &mut out,
     );
     let text = String::from_utf8(out).unwrap();
@@ -866,7 +882,7 @@ tracks = [
 
     // Without suppression: all three warnings appear.
     let mut out = buf();
-    let _ = run_convert(&video, None, None, false, false, Verbosity::Default, WarnFlags::default(), false, &mut out);
+    let _ = run_convert(&video, None, None, false, false, Verbosity::Default, WarnFlags::default(), false, &[], &mut out);
     let text = String::from_utf8(out).unwrap();
     assert!(text.contains("encoder.crf=26"), "CRF warning expected:\n{}", text);
     assert!(text.contains("subtitle tracks have mux=\"burn\""), "multiple-burns warning expected:\n{}", text);
@@ -883,6 +899,7 @@ tracks = [
         Verbosity::Default,
         WarnFlags { no_warnings: true, ..WarnFlags::default() },
         false,
+        &[],
         &mut out,
     );
     let text = String::from_utf8(out).unwrap();
@@ -918,6 +935,7 @@ tracks = [{ source = 1, lang = "jpn", default = true }]
         Verbosity::Default,
         WarnFlags::default(),
         true, // keep_intermediates
+        &[],
         &mut out,
     );
     let text = String::from_utf8(out).unwrap();
@@ -949,6 +967,7 @@ tracks = [{ source = 1, lang = "jpn", default = true }]
         Verbosity::Default,
         WarnFlags::default(),
         false, // keep_intermediates
+        &[],
         &mut out,
     );
     let text = String::from_utf8(out).unwrap();
@@ -980,6 +999,7 @@ tracks = [{ source = 1, lang = "jpn", default = true }]
         Verbosity::Default,
         WarnFlags::default(),
         true, // keep_intermediates
+        &[],
         &mut out,
     );
     let text = String::from_utf8(out).unwrap();
@@ -1012,6 +1032,7 @@ fn generate_config_errors_when_no_cli_overrides() {
         Verbosity::Default,
         WarnFlags::default(),
         false,
+        &[],
         &mut out,
     );
     assert!(
@@ -1043,6 +1064,7 @@ fn generate_config_writes_sidecar_next_to_file() {
         Verbosity::Default,
         WarnFlags::default(),
         false,
+        &[],
         &mut out,
     );
     // The encode will fail (ffmpeg not available in CI), but the sidecar
@@ -1089,6 +1111,7 @@ fn generate_config_warns_and_skips_if_sidecar_exists() {
         Verbosity::Default,
         WarnFlags::default(),
         false,
+        &[],
         &mut out,
     );
     let text = String::from_utf8(out).unwrap();
@@ -1122,6 +1145,7 @@ fn generate_config_dry_run_reports_would_write_but_does_not_write() {
         Verbosity::Default,
         WarnFlags::default(),
         false,
+        &[],
         &mut out,
     );
     let text = String::from_utf8(out).unwrap();
@@ -1156,6 +1180,7 @@ fn generate_config_directory_mode_writes_bento_toml() {
         Verbosity::Default,
         WarnFlags::default(),
         false,
+        &[],
         &mut out,
     );
     let text = String::from_utf8(out).unwrap();
@@ -1186,6 +1211,7 @@ fn generate_config_warn_flag_appears_in_sidecar() {
         Verbosity::Default,
         WarnFlags { no_warn_multiple_burns: true, ..WarnFlags::default() },
         false,
+        &[],
         &mut out,
     );
     assert!(
@@ -1202,5 +1228,237 @@ fn generate_config_warn_flag_appears_in_sidecar() {
         content.contains("false"),
         "sidecar should contain the suppressed value (false):\n{}",
         content
+    );
+}
+
+// ---------------------------------------------------------------------------
+// --set KEY=VALUE
+// ---------------------------------------------------------------------------
+
+#[test]
+fn set_integer_override_captured_in_sidecar() {
+    // --set video.encoder.crf=18 should override the baked-in default (20) and
+    // appear in the generated sidecar when --generate-config is also passed.
+    let dir = TestDir::new("set_crf");
+    let video = dir.write("episode01.mkv", "");
+    dir.write(
+        "bento.toml",
+        "[audio]\ntracks = [{ source = 1, lang = \"jpn\", default = true }]\n",
+    );
+    let sidecar = dir.path.join("episode01.mkv.bento.toml");
+    let mut out = buf();
+    let _result = run_convert(
+        &video,
+        None,
+        None,
+        true,  // generate_config
+        false, // dry_run
+        Verbosity::Default,
+        WarnFlags::default(),
+        false,
+        &["video.encoder.crf=18".to_string()],
+        &mut out,
+    );
+    assert!(sidecar.exists(), "sidecar should be written");
+    let content = std::fs::read_to_string(&sidecar).unwrap();
+    assert!(
+        content.contains("crf"),
+        "sidecar should contain the crf override:\n{}",
+        content
+    );
+    assert!(
+        content.contains("18"),
+        "sidecar should contain the overridden value 18:\n{}",
+        content
+    );
+}
+
+#[test]
+fn set_string_override_captured_in_sidecar() {
+    let dir = TestDir::new("set_container");
+    let video = dir.write("episode01.mkv", "");
+    dir.write(
+        "bento.toml",
+        "[audio]\ntracks = [{ source = 1, lang = \"jpn\", default = true }]\n",
+    );
+    let sidecar = dir.path.join("episode01.mkv.bento.toml");
+    let mut out = buf();
+    let _result = run_convert(
+        &video,
+        None,
+        None,
+        true,  // generate_config
+        false, // dry_run
+        Verbosity::Default,
+        WarnFlags::default(),
+        false,
+        &[r#"output.container="mkv""#.to_string()],
+        &mut out,
+    );
+    assert!(sidecar.exists(), "sidecar should be written");
+    let content = std::fs::read_to_string(&sidecar).unwrap();
+    assert!(
+        content.contains("container"),
+        "sidecar should contain the container override:\n{}",
+        content
+    );
+    assert!(
+        content.contains("mkv"),
+        "sidecar should contain 'mkv':\n{}",
+        content
+    );
+}
+
+#[test]
+fn set_appears_in_generate_config_sidecar() {
+    let dir = TestDir::new("set_gen_cfg");
+    let video = dir.write("episode01.mkv", "");
+    dir.write(
+        "bento.toml",
+        "[audio]\ntracks = [{ source = 1, lang = \"jpn\", default = true }]\n",
+    );
+    let sidecar = dir.path.join("episode01.mkv.bento.toml");
+
+    let mut out = buf();
+    let _result = run_convert(
+        &video,
+        None,
+        None,
+        true,  // generate_config
+        false, // dry_run
+        Verbosity::Default,
+        WarnFlags::default(),
+        false,
+        &["video.encoder.crf=18".to_string()],
+        &mut out,
+    );
+    assert!(sidecar.exists(), "sidecar should be written");
+    let content = std::fs::read_to_string(&sidecar).unwrap();
+    assert!(
+        content.contains("crf"),
+        "sidecar should contain the --set override:\n{}",
+        content
+    );
+    assert!(
+        content.contains("18"),
+        "sidecar should contain the overridden value:\n{}",
+        content
+    );
+}
+
+#[test]
+fn set_error_no_equals_fails_early() {
+    let dir = TestDir::new("set_no_equals");
+    let video = dir.write("episode01.mkv", "");
+    dir.write(
+        "bento.toml",
+        "[audio]\ntracks = [{ source = 1, lang = \"jpn\", default = true }]\n",
+    );
+    let mut out = buf();
+    let result = run_convert(
+        &video,
+        None,
+        None,
+        false,
+        false,
+        Verbosity::Default,
+        WarnFlags::default(),
+        false,
+        &["video.encoder.crf".to_string()],
+        &mut out,
+    );
+    assert!(
+        matches!(result, Err(Error::SetOverrideSyntax { .. })),
+        "expected SetOverrideSyntax, got: {:?}",
+        result
+    );
+}
+
+#[test]
+fn set_error_list_path_rejected() {
+    let dir = TestDir::new("set_list_path");
+    let video = dir.write("episode01.mkv", "");
+    dir.write(
+        "bento.toml",
+        "[audio]\ntracks = [{ source = 1, lang = \"jpn\", default = true }]\n",
+    );
+    let mut out = buf();
+    let result = run_convert(
+        &video,
+        None,
+        None,
+        false,
+        false,
+        Verbosity::Default,
+        WarnFlags::default(),
+        false,
+        &["audio.tracks=[]".to_string()],
+        &mut out,
+    );
+    assert!(
+        matches!(result, Err(Error::SetOverrideListPath { .. })),
+        "expected SetOverrideListPath, got: {:?}",
+        result
+    );
+}
+
+#[test]
+fn set_error_bare_string_rejected() {
+    let dir = TestDir::new("set_bare_string");
+    let video = dir.write("episode01.mkv", "");
+    dir.write(
+        "bento.toml",
+        "[audio]\ntracks = [{ source = 1, lang = \"jpn\", default = true }]\n",
+    );
+    let mut out = buf();
+    let result = run_convert(
+        &video,
+        None,
+        None,
+        false,
+        false,
+        Verbosity::Default,
+        WarnFlags::default(),
+        false,
+        &["video.encoder.name=animation".to_string()],
+        &mut out,
+    );
+    assert!(
+        matches!(result, Err(Error::SetOverrideValue { .. })),
+        "expected SetOverrideValue, got: {:?}",
+        result
+    );
+}
+
+#[test]
+fn set_generate_config_errors_when_set_is_the_only_override_trigger() {
+    // --generate-config should succeed when --set is the only override
+    // (previously the no-override check rejected it since only --on-existing
+    // and warn flags were counted).
+    let dir = TestDir::new("set_gen_cfg_only");
+    let video = dir.write("episode01.mkv", "");
+    dir.write(
+        "bento.toml",
+        "[audio]\ntracks = [{ source = 1, lang = \"jpn\", default = true }]\n",
+    );
+    let sidecar = dir.path.join("episode01.mkv.bento.toml");
+    let mut out = buf();
+    let _result = run_convert(
+        &video,
+        None,
+        None,
+        true,  // generate_config
+        false, // dry_run
+        Verbosity::Default,
+        WarnFlags::default(),
+        false,
+        &["audio.bitrate=128".to_string()],
+        &mut out,
+    );
+    // The sidecar must exist — the --set value counts as an override.
+    assert!(
+        sidecar.exists(),
+        "sidecar should be written when --set is the only override: out=\n{}",
+        String::from_utf8(out).unwrap()
     );
 }

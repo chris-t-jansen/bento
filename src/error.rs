@@ -95,9 +95,34 @@ pub enum Error {
 
     #[error(
         "--generate-config requires at least one CLI override to write; \
-         pass --on-existing, a --no-warn-* flag, or (once implemented) --set KEY=VALUE"
+         pass --on-existing, a --no-warn-* flag, or --set KEY=VALUE"
     )]
     GenerateConfigNoOverrides,
+
+    #[error("--set {input}: {reason}")]
+    SetOverrideSyntax { input: String, reason: String },
+
+    #[error(
+        "--set {key}: `audio.tracks` and `subtitles.tracks` cannot be set via --set; \
+         use a sidecar config (`<file>.bento.toml`) to configure per-file track lists"
+    )]
+    SetOverrideListPath { key: String },
+
+    #[error("--set {key}={value}: could not parse value as a TOML scalar{hint}")]
+    SetOverrideValue {
+        key: String,
+        value: String,
+        hint: String,
+    },
+
+    #[error(
+        "--set {key}={value}: value must be a TOML scalar \
+         (bool, integer, or quoted string), not a table or array"
+    )]
+    SetOverrideNotScalar { key: String, value: String },
+
+    #[error("--set: {reason}")]
+    SetOverrideSchema { reason: String },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

@@ -8,6 +8,7 @@ pub mod pipeline;
 pub mod progress;
 pub mod render;
 pub mod resolve;
+pub mod set_override;
 pub mod subtitles;
 pub mod validate;
 pub mod verbosity;

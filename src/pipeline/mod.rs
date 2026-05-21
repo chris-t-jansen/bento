@@ -64,6 +64,7 @@ pub fn run_convert(
     verbosity: Verbosity,
     warn_flags: WarnFlags,
     keep_intermediates: bool,
+    set_overrides: &[String],
     out: &mut dyn Write,
 ) -> Result<()> {
     if !input.exists() {
@@ -72,7 +73,7 @@ pub fn run_convert(
 
     // Build the CLI layer config from explicit CLI overrides. This is used both
     // for --generate-config sidecar writing and for adding to the resolution stack.
-    let cli_config = build_cli_config(on_existing_override, warn_flags);
+    let cli_config = build_cli_config(on_existing_override, warn_flags, set_overrides)?;
     let cli_config_is_empty = cli_config == Config::default();
 
     // --generate-config requires at least one override to write.
@@ -493,8 +494,19 @@ fn run_convert_file(
 /// Build a Config representing only the fields explicitly set by CLI flags.
 /// This becomes the `Layer::Cli` entry added to the resolution stack, and is
 /// also what `--generate-config` serializes to the sidecar file.
-fn build_cli_config(on_existing_override: Option<OnExisting>, flags: WarnFlags) -> Config {
-    let mut config = Config::default();
+///
+/// `--set KEY=VALUE` overrides are applied first; dedicated flags (e.g.
+/// `--on-existing`, `--no-warn-*`) are written on top so they win when both
+/// target the same field.
+fn build_cli_config(
+    on_existing_override: Option<OnExisting>,
+    flags: WarnFlags,
+    set_overrides: &[String],
+) -> Result<Config> {
+    // Start from --set overrides (empty Config when none are given).
+    let mut config = crate::set_override::build_set_config(set_overrides)?;
+
+    // Dedicated CLI flags overwrite any conflicting --set values for the same fields.
     let suppress_all = flags.no_warnings;
 
     if let Some(oe) = on_existing_override {
@@ -518,7 +530,8 @@ fn build_cli_config(on_existing_override: Option<OnExisting>, flags: WarnFlags) 
     }
     // no_warn_missing and no_warn_redundant are accepted but have no Config
     // counterparts yet; they remain CLI-only no-ops for now.
-    config
+
+    Ok(config)
 }
 
 /// Write the CLI-override config to a sidecar file, stripping empty sections

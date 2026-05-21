@@ -126,6 +126,14 @@ pub enum Command {
         /// (Warning not yet emitted; flag accepted for forward compatibility.)
         #[arg(long = "no-warn-redundant")]
         no_warn_redundant: bool,
+
+        /// Override a config field for this run. KEY is a dotted path into the
+        /// schema (e.g. `video.encoder.crf`); VALUE is a TOML scalar (`true`,
+        /// `42`, `"quoted string"`). Bare strings are not accepted. May be
+        /// repeated. Track lists (`audio.tracks`, `subtitles.tracks`) are not
+        /// addressable via --set; use a sidecar config instead.
+        #[arg(long = "set", value_name = "KEY=VALUE", num_args = 1)]
+        set: Vec<String>,
     },
     /// Resolve and print the full config for a file or directory, with provenance.
     Config { path: PathBuf },
@@ -163,6 +171,7 @@ pub fn run() -> Result<()> {
             no_warn_crf_codec_mismatch,
             no_warn_missing,
             no_warn_redundant,
+            set,
         } => {
             let on_existing_override = if overwrite {
                 Some(OnExisting::Overwrite)
@@ -195,6 +204,7 @@ pub fn run() -> Result<()> {
                 verbosity,
                 warn_flags,
                 keep_intermediates,
+                &set,
                 &mut stdout,
             )
         }

@@ -35,6 +35,7 @@ Foundation pieces that are working end-to-end. Most have at least light test cov
 - **Required-field detection** — DESIGN.md §Validation. `validate_output` in `validate.rs` checks `output.naming.regex` syntax and validates that every `{varname}` in `output.naming.template` resolves to a built-in, metadata field, or named regex capture. Per-track `source` required checks for audio and subtitle tracks were already in place. (`validate.rs`.)
 - **`--keep-intermediates`** — DESIGN.md §CLI flags. Per-run `TempDir` moved to `run_convert` level; each file carves a sanitized-basename subdir within it. Flag suppresses cleanup via `TempDir::keep()` and prints the preserved path. Dry-run is a silent no-op. 3 new integration tests. (`pipeline/mod.rs`, `cli.rs`.)
 - **`--generate-config`** — DESIGN.md §Sidecar generation. Writes CLI overrides to a sidecar TOML file (per-file: `<file>.bento.toml`; directory: `<dir>/bento.toml`). Errors if no CLI overrides are present. Warns and skips without overwriting if sidecar already exists. Dry-run reports "Would write sidecar at:" with no filesystem effects. CLI overrides are now folded into a proper `Layer::Cli` in the resolution stack (replacing the old `apply_warn_overrides` post-resolution mutation), so provenance correctly attributes CLI-set fields. 6 new integration tests. (`pipeline/mod.rs`, `cli.rs`, `error.rs`.)
+- **`--set KEY=VALUE`** — DESIGN.md §Override semantics. Generic dotted-path CLI override. VALUE is parsed as a strict TOML scalar (bool, int, or quoted string); bare strings, tables, and arrays are rejected with specific errors. `audio.tracks` and `subtitles.tracks` are explicitly blocked with a sidecar-pointing error message. `--set` values flow into `Layer::Cli` alongside the dedicated flags and are captured by `--generate-config`. Dedicated flags (`--on-existing`, `--no-warn-*`) overwrite conflicting `--set` values for the same field. 5 new error variants, `src/set_override.rs` with 17 unit tests, 7 new integration tests. (`src/set_override.rs`, `pipeline/mod.rs`, `cli.rs`, `error.rs`.)
 
 ### CLI surface
 - `bento convert <path> [output_dir]` for both single-file and directory mode — DESIGN.md §CLI.
@@ -79,9 +80,6 @@ Foundation pieces that are working end-to-end. Most have at least light test cov
 
 Listed in rough priority order: MVP-completion items first, then UX/control flags, then deferred subcommands.
 
-### CLI control & visibility flags
-- `--set KEY=VALUE` generic dotted-path overrides — DESIGN.md §CLI flags.
-
 ### Deferred subcommands
 - **`bento repair`** — insert missing fields into an existing global config — DESIGN.md §`bento repair`. (`cli.rs` dispatches to `unimplemented!`.)
 
@@ -107,4 +105,4 @@ Things in the code that don't cleanly map back to DESIGN.md, or design decisions
 
 ---
 
-*Last updated: 2026-05-21. Session: (1) required-field detection for `output.naming` — `validate_output` in `validate.rs`, 9 new unit tests; (2) `--keep-intermediates` — moved TempDir to run level with per-file subdirs, `TempDir::keep()` suppresses cleanup, dry-run is a silent no-op, 3 new integration tests. (3) `--generate-config` — writes CLI overrides to sidecar TOML; CLI overrides promoted to proper `Layer::Cli` in resolution stack; handles empty-override error, existing-sidecar warn-and-skip, dry-run reporting; 6 new integration tests. 214 tests total, all passing.*
+*Last updated: 2026-05-21. Session: (1) required-field detection for `output.naming` — `validate_output` in `validate.rs`, 9 new unit tests; (2) `--keep-intermediates` — moved TempDir to run level with per-file subdirs, `TempDir::keep()` suppresses cleanup, dry-run is a silent no-op, 3 new integration tests. (3) `--generate-config` — writes CLI overrides to sidecar TOML; CLI overrides promoted to proper `Layer::Cli` in resolution stack; handles empty-override error, existing-sidecar warn-and-skip, dry-run reporting; 6 new integration tests. (4) `--set KEY=VALUE` — generic dotted-path scalar override; `src/set_override.rs` with 17 unit tests; 7 new integration tests; `run_convert` signature updated accordingly. 240 tests total, all passing.*
