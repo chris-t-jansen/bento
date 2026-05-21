@@ -32,6 +32,7 @@ Foundation pieces that are working end-to-end. Most have at least light test cov
 - Validation issue reporting with severity, dotted path, and message — DESIGN.md §Errors & warnings.
 - **Baked-in defaults layer** — DESIGN.md §Defaults. `baked_defaults()` in `resolve.rs` is fully populated; resolution falls through to built-in values correctly. (`resolve.rs`.)
 - **Global config bootstrap template** — DESIGN.md §Bootstrap. Template in `bootstrap.rs` is comprehensive and is invoked by `bento check [-y]` via `ensure_global_config`. (`bootstrap.rs`, `layers.rs`, `cli.rs`.)
+- **Required-field detection** — DESIGN.md §Validation. `validate_output` in `validate.rs` checks `output.naming.regex` syntax and validates that every `{varname}` in `output.naming.template` resolves to a built-in, metadata field, or named regex capture. Per-track `source` required checks for audio and subtitle tracks were already in place. (`validate.rs`.)
 
 ### CLI surface
 - `bento convert <path> [output_dir]` for both single-file and directory mode — DESIGN.md §CLI.
@@ -68,10 +69,7 @@ Foundation pieces that are working end-to-end. Most have at least light test cov
 
 ## In progress
 
-Features with substantive code in place but missing wiring, edge cases, or the last mile to be usable end-to-end.
-
-### Configuration
-- **Required-field detection** — DESIGN.md §Validation. `audio.tracks` is checked; no general mechanism yet for other conditionally-required fields (e.g., naming template requiring metadata).
+*(nothing currently in progress)*
 
 ---
 
@@ -109,4 +107,4 @@ Things in the code that don't cleanly map back to DESIGN.md, or design decisions
 
 ---
 
-*Last updated: 2026-05-20. Session: implemented `--no-warn-X` / `--no-warnings` suppression flags. Added `WarnFlags` struct to `pipeline/mod.rs`, threaded through `run_convert` → `run_convert_directory` → `run_convert_file`, applied via `apply_warn_overrides` (mutates resolved config warn fields before validation). All 8 flags wired in `cli.rs`. 6 new integration tests verify per-flag and bulk suppression. 195 tests total, all passing.*
+*Last updated: 2026-05-21. Session: implemented required-field detection for `output.naming`. Added `validate_output` to `validate.rs`, wired into `validate()`. Validates regex syntax whenever set; for each `{varname}` in `naming.template`, verifies it resolves to a built-in (`source_basename`, `source_dir`), a set metadata field (`show`/`season`/`year`), or a named regex capture — errors with an actionable hint otherwise. 9 new unit tests. 205 tests total, all passing.*

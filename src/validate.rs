@@ -54,11 +54,88 @@ pub fn validate(resolved: &Resolved) -> Vec<ValidationIssue> {
     let mut issues = Vec::new();
     let cfg = &resolved.config;
 
+    validate_output(&cfg.output, &mut issues);
     validate_video(&cfg.video, &mut issues);
     validate_audio(&cfg.audio, &mut issues);
     validate_subtitles(&cfg.subtitles, cfg.output.container, &mut issues);
 
     issues
+}
+
+// =============================================================================
+// Output
+// =============================================================================
+
+fn validate_output(output: &Output, issues: &mut Vec<ValidationIssue>) {
+    let Some(naming) = &output.naming else { return };
+
+    // Always validate regex syntax when the field is set.
+    let compiled_regex = naming.regex.as_ref().and_then(|pattern| {
+        match regex::Regex::new(pattern) {
+            Ok(re) => Some(re),
+            Err(e) => {
+                issues.push(ValidationIssue::error(
+                    "output.naming.regex",
+                    format!("regex failed to compile: {e}"),
+                ));
+                None
+            }
+        }
+    });
+
+    let Some(template) = &naming.template else { return };
+
+    // Named captures available from the compiled regex (empty if regex absent or invalid).
+    let regex_captures: Vec<&str> = compiled_regex
+        .as_ref()
+        .map(|re| re.capture_names().flatten().collect())
+        .unwrap_or_default();
+
+    // Built-in variables always available regardless of config.
+    const BUILTINS: &[&str] = &["source_basename", "source_dir"];
+    let meta = output.metadata.as_ref();
+
+    // Parse the template and verify each {varname} reference is resolvable.
+    let var_re = regex::Regex::new(r"\{([A-Za-z_][A-Za-z0-9_]*)(?::[^}]*)?\}").unwrap();
+    for cap in var_re.captures_iter(template) {
+        let var_name: &str = &cap[1];
+
+        if BUILTINS.contains(&var_name) {
+            continue;
+        }
+
+        let from_metadata = match var_name {
+            "show" => meta.and_then(|m| m.show.as_ref()).is_some(),
+            "season" => meta.map(|m| m.season.is_some()).unwrap_or(false),
+            "year" => meta.map(|m| m.year.is_some()).unwrap_or(false),
+            _ => false,
+        };
+        if from_metadata {
+            continue;
+        }
+
+        if regex_captures.contains(&var_name) {
+            continue;
+        }
+
+        // Variable is not resolvable from any source — config error.
+        let hint = match var_name {
+            "show" => " — set output.metadata.show or add a regex capture named `show`",
+            "season" => " — set output.metadata.season or add a regex capture named `season`",
+            "year" => " — set output.metadata.year or add a regex capture named `year`",
+            _ if naming.regex.is_some() => {
+                " — not a built-in variable, metadata field, or named regex capture"
+            }
+            _ => {
+                " — not a built-in variable or metadata field; \
+                 add a regex capture or set the metadata field"
+            }
+        };
+        issues.push(ValidationIssue::error(
+            "output.naming.template",
+            format!("template references undefined variable `{{{var_name}}}`{hint}"),
+        ));
+    }
 }
 
 // =============================================================================
@@ -782,6 +859,149 @@ tracks = [
         let tracks = cfg.subtitles.tracks.unwrap();
         assert_eq!(tracks[0].mux, Some(SubtitleMux::External));
         assert_eq!(tracks[1].mux, Some(SubtitleMux::Burn));
+    }
+
+    // --- Output / naming template validation --------------------------------
+
+    #[test]
+    fn naming_template_show_without_metadata_errors() {
+        let issues = check(r#"
+[output]
+naming = { template = "{show} - ep{source_basename}" }
+"#);
+        let errs = errors(&issues);
+        assert!(
+            errs.iter().any(|e| e.path == "output.naming.template" && e.message.contains("{show}")),
+            "expected undefined-variable error for {{show}}, got: {:?}", errs
+        );
+    }
+
+    #[test]
+    fn naming_template_show_with_metadata_ok() {
+        let issues = check(r#"
+[output]
+metadata = { show = "Cowboy Bebop" }
+naming = { template = "{show} - ep{source_basename}" }
+"#);
+        assert!(
+            !errors(&issues).iter().any(|e| e.path == "output.naming.template"),
+            "expected no naming error when metadata.show is set: {:?}", errors(&issues)
+        );
+    }
+
+    #[test]
+    fn naming_template_builtin_vars_ok() {
+        let issues = check(r#"
+[output]
+naming = { template = "{source_dir}/{source_basename}" }
+"#);
+        assert!(
+            !errors(&issues).iter().any(|e| e.path == "output.naming.template"),
+            "built-in variables should not produce an error: {:?}", errors(&issues)
+        );
+    }
+
+    #[test]
+    fn naming_template_regex_capture_ok() {
+        let issues = check(r#"
+[output]
+naming = {
+    regex = 'S(?P<s>\d+)E(?P<episode>\d+)',
+    template = "S{s:02}E{episode:02}",
+}
+"#);
+        assert!(
+            !errors(&issues).iter().any(|e| e.path == "output.naming.template"),
+            "regex capture variables should not produce an error: {:?}", errors(&issues)
+        );
+    }
+
+    #[test]
+    fn naming_template_missing_regex_capture_errors() {
+        // Template references {episode} but the regex only has capture {s}.
+        let issues = check(r#"
+[output]
+naming = {
+    regex = 'S(?P<s>\d+)',
+    template = "S{s:02}E{episode:02}",
+}
+"#);
+        let errs = errors(&issues);
+        assert!(
+            errs.iter().any(|e| e.path == "output.naming.template" && e.message.contains("{episode}")),
+            "expected undefined-variable error for {{episode}}: {:?}", errs
+        );
+    }
+
+    #[test]
+    fn naming_template_unknown_var_no_regex_errors() {
+        let issues = check(r#"
+[output]
+naming = { template = "{myvar}" }
+"#);
+        let errs = errors(&issues);
+        assert!(
+            errs.iter().any(|e| e.path == "output.naming.template" && e.message.contains("{myvar}")),
+            "expected undefined-variable error for {{myvar}}: {:?}", errs
+        );
+    }
+
+    #[test]
+    fn naming_invalid_regex_errors() {
+        let issues = check(r#"
+[output]
+naming = { regex = "[(invalid" }
+"#);
+        let errs = errors(&issues);
+        assert!(
+            errs.iter().any(|e| e.path == "output.naming.regex"),
+            "expected regex compile error: {:?}", errs
+        );
+    }
+
+    #[test]
+    fn naming_template_show_via_regex_capture_overrides_absent_metadata() {
+        // A regex capture named `show` satisfies {show} in the template even
+        // when metadata.show is not set — captures are inserted after metadata
+        // in naming.rs and can supply variables metadata doesn't.
+        let issues = check(r#"
+[output]
+naming = {
+    regex = '(?P<show>.+) S\d+E\d+',
+    template = "{show} episode",
+}
+"#);
+        assert!(
+            !errors(&issues).iter().any(|e| e.path == "output.naming.template"),
+            "regex capture `show` should satisfy {{show}} even without metadata.show: {:?}",
+            errors(&issues)
+        );
+    }
+
+    #[test]
+    fn naming_multiple_undefined_vars_all_reported() {
+        let issues = check(r#"
+[output]
+naming = { template = "{show} S{season:02}" }
+"#);
+        let errs: Vec<_> = errors(&issues)
+            .into_iter()
+            .filter(|e| e.path == "output.naming.template")
+            .collect();
+        assert_eq!(errs.len(), 2, "both {{show}} and {{season}} should error: {:?}", errs);
+    }
+
+    #[test]
+    fn naming_season_and_year_from_metadata_ok() {
+        let issues = check(r#"
+[output]
+metadata = { show = "Bebop", season = 1, year = 1998 }
+naming = { template = "{show} S{season:02} ({year})" }
+"#);
+        assert!(
+            !errors(&issues).iter().any(|e| e.path == "output.naming.template"),
+            "all metadata vars set, should be clean: {:?}", errors(&issues)
+        );
     }
 
     // --- Clean configs produce no errors -----------------------------------
