@@ -44,6 +44,21 @@ pub struct WarnFlags {
     pub no_warnings: bool,
 }
 
+/// All CLI-level options for a `bento convert` invocation. Passed as a single
+/// argument to [`run_convert`] so that adding new flags does not change the
+/// call signature.
+#[derive(Debug, Default)]
+pub struct ConvertOptions {
+    pub output_dir_override: Option<std::path::PathBuf>,
+    pub on_existing_override: Option<OnExisting>,
+    pub generate_config: bool,
+    pub dry_run: bool,
+    pub verbosity: Verbosity,
+    pub warn_flags: WarnFlags,
+    pub keep_intermediates: bool,
+    pub set_overrides: Vec<String>,
+}
+
 pub const VIDEO_EXTENSIONS: &[&str] = &[
     "mkv", "mp4", "m4v", "avi", "mov", "webm", "ts", "m2ts", "wmv",
 ];
@@ -55,25 +70,26 @@ pub fn is_video_extension(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
-pub fn run_convert(
-    input: &Path,
-    output_dir_override: Option<&Path>,
-    on_existing_override: Option<OnExisting>,
-    generate_config: bool,
-    dry_run: bool,
-    verbosity: Verbosity,
-    warn_flags: WarnFlags,
-    keep_intermediates: bool,
-    set_overrides: &[String],
-    out: &mut dyn Write,
-) -> Result<()> {
+pub fn run_convert(input: &Path, out: &mut dyn Write, opts: ConvertOptions) -> Result<()> {
+    let ConvertOptions {
+        output_dir_override,
+        on_existing_override,
+        generate_config,
+        dry_run,
+        verbosity,
+        warn_flags,
+        keep_intermediates,
+        set_overrides,
+    } = opts;
+    let output_dir_override = output_dir_override.as_deref();
+
     if !input.exists() {
         return Err(Error::PathNotFound(input.to_path_buf()));
     }
 
     // Build the CLI layer config from explicit CLI overrides. This is used both
     // for --generate-config sidecar writing and for adding to the resolution stack.
-    let cli_config = build_cli_config(on_existing_override, warn_flags, set_overrides)?;
+    let cli_config = build_cli_config(on_existing_override, warn_flags, &set_overrides)?;
     let cli_config_is_empty = cli_config == Config::default();
 
     // --generate-config requires at least one override to write.

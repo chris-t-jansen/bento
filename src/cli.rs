@@ -7,7 +7,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 
 use crate::config::OnExisting;
 use crate::error::{Error, Result};
-use crate::pipeline::WarnFlags;
+use crate::pipeline::{ConvertOptions, WarnFlags};
 use crate::verbosity::Verbosity;
 
 #[derive(Parser)]
@@ -197,15 +197,17 @@ pub fn run() -> Result<()> {
             };
             crate::pipeline::run_convert(
                 &path,
-                output_dir.as_deref(),
-                on_existing_override,
-                generate_config,
-                dry_run,
-                verbosity,
-                warn_flags,
-                keep_intermediates,
-                &set,
                 &mut stdout,
+                ConvertOptions {
+                    output_dir_override: output_dir,
+                    on_existing_override,
+                    generate_config,
+                    dry_run,
+                    verbosity,
+                    warn_flags,
+                    keep_intermediates,
+                    set_overrides: set,
+                },
             )
         }
         Command::Repair => unimplemented!("repair (deferred)"),
