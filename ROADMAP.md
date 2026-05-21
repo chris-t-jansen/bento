@@ -33,6 +33,7 @@ Foundation pieces that are working end-to-end. Most have at least light test cov
 - **Baked-in defaults layer** — DESIGN.md §Defaults. `baked_defaults()` in `resolve.rs` is fully populated; resolution falls through to built-in values correctly. (`resolve.rs`.)
 - **Global config bootstrap template** — DESIGN.md §Bootstrap. Template in `bootstrap.rs` is comprehensive and is invoked by `bento check [-y]` via `ensure_global_config`. (`bootstrap.rs`, `layers.rs`, `cli.rs`.)
 - **Required-field detection** — DESIGN.md §Validation. `validate_output` in `validate.rs` checks `output.naming.regex` syntax and validates that every `{varname}` in `output.naming.template` resolves to a built-in, metadata field, or named regex capture. Per-track `source` required checks for audio and subtitle tracks were already in place. (`validate.rs`.)
+- **`--keep-intermediates`** — DESIGN.md §CLI flags. Per-run `TempDir` moved to `run_convert` level; each file carves a sanitized-basename subdir within it. Flag suppresses cleanup via `TempDir::keep()` and prints the preserved path. Dry-run is a silent no-op. 3 new integration tests. (`pipeline/mod.rs`, `cli.rs`.)
 
 ### CLI surface
 - `bento convert <path> [output_dir]` for both single-file and directory mode — DESIGN.md §CLI.
@@ -78,7 +79,6 @@ Foundation pieces that are working end-to-end. Most have at least light test cov
 Listed in rough priority order: MVP-completion items first, then UX/control flags, then deferred subcommands.
 
 ### CLI control & visibility flags
-- `--keep-intermediates` to preserve the temp dir — DESIGN.md §CLI flags.
 - `--generate-config` to write a sidecar capturing CLI overrides — DESIGN.md §Sidecar generation.
 - `--set KEY=VALUE` generic dotted-path overrides — DESIGN.md §CLI flags.
 
@@ -107,4 +107,4 @@ Things in the code that don't cleanly map back to DESIGN.md, or design decisions
 
 ---
 
-*Last updated: 2026-05-21. Session: implemented required-field detection for `output.naming`. Added `validate_output` to `validate.rs`, wired into `validate()`. Validates regex syntax whenever set; for each `{varname}` in `naming.template`, verifies it resolves to a built-in (`source_basename`, `source_dir`), a set metadata field (`show`/`season`/`year`), or a named regex capture — errors with an actionable hint otherwise. 9 new unit tests. 205 tests total, all passing.*
+*Last updated: 2026-05-21. Session: (1) required-field detection for `output.naming` — `validate_output` in `validate.rs`, 9 new unit tests; (2) `--keep-intermediates` — moved TempDir to run level with per-file subdirs, `TempDir::keep()` suppresses cleanup, dry-run is a silent no-op, 3 new integration tests. 208 tests total, all passing.*

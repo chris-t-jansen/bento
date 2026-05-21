@@ -62,57 +62,85 @@ pub fn run_convert(
     dry_run: bool,
     verbosity: Verbosity,
     warn_flags: WarnFlags,
+    keep_intermediates: bool,
     out: &mut dyn Write,
 ) -> Result<()> {
     if !input.exists() {
         return Err(Error::PathNotFound(input.to_path_buf()));
     }
-    if input.is_dir() {
-        return run_convert_directory(
+
+    // Per-run temp dir — held here so it outlives all file processing.
+    // Dry-run produces no intermediate files, so no dir is needed.
+    let temp_dir: Option<tempfile::TempDir> = if dry_run {
+        None
+    } else {
+        Some(tempfile::tempdir().map_err(|e| Error::Io {
+            path: PathBuf::from("<tempdir>"),
+            source: e,
+        })?)
+    };
+    let temp_root: Option<&Path> = temp_dir.as_ref().map(|d| d.path());
+
+    let run_result = if input.is_dir() {
+        run_convert_directory(
             input,
             output_dir_override,
             on_existing_override,
             dry_run,
             verbosity,
             warn_flags,
+            temp_root,
+            out,
+        )
+    } else {
+        // Single-file: print a unified header, run, then always print the summary.
+        let input_dir = input.parent().unwrap_or_else(|| Path::new("."));
+        print_convert_header(input_dir, &[input.to_path_buf()], dry_run, out)?;
+
+        let result = run_convert_file(
+            input,
+            1,
+            1,
+            output_dir_override,
+            on_existing_override,
+            dry_run,
+            verbosity,
+            warn_flags,
+            temp_root,
             out,
         );
+
+        // FfmpegNotFound is an environmental error — skip the per-run summary
+        // since every remaining file would fail the same way.
+        let is_env_error = matches!(&result, Err(Error::FfmpegNotFound));
+        if !is_env_error {
+            if dry_run {
+                let error_count = if result.is_err() { 1 } else { 0 };
+                print_dry_run_summary(input, 1, error_count, verbosity, out)?;
+            } else {
+                let failed: Vec<(PathBuf, String)> = match &result {
+                    Ok(()) => vec![],
+                    Err(e) => vec![(input.to_path_buf(), e.to_string())],
+                };
+                let succeeded = if failed.is_empty() { 1 } else { 0 };
+                print_batch_summary(succeeded, &failed, out)?;
+            }
+        }
+        result
+    };
+
+    // Suppress temp dir cleanup when --keep-intermediates is set.
+    // Dry-run is always a silent no-op (temp_dir is None).
+    if keep_intermediates {
+        if let Some(dir) = temp_dir {
+            let path = dir.keep();
+            writeln!(out, "\nIntermediate files preserved at: {}", path.display())
+                .map_err(crate::io_render_err)?;
+        }
     }
+    // temp_dir drops here if !keep_intermediates → auto-cleanup
 
-    // Single-file: print a unified header (same style as the directory path),
-    // then run, then always print the summary.
-    let input_dir = input.parent().unwrap_or_else(|| Path::new("."));
-    print_convert_header(input_dir, &[input.to_path_buf()], dry_run, out)?;
-
-    let result = run_convert_file(
-        input,
-        1,
-        1,
-        output_dir_override,
-        on_existing_override,
-        dry_run,
-        verbosity,
-        warn_flags,
-        out,
-    );
-
-    match &result {
-        Err(e) if matches!(e, Error::FfmpegNotFound) => return result,
-        _ => {}
-    }
-
-    if dry_run {
-        let error_count = if result.is_err() { 1 } else { 0 };
-        print_dry_run_summary(input, 1, error_count, verbosity, out)?;
-    } else {
-        let failed: Vec<(PathBuf, String)> = match &result {
-            Ok(()) => vec![],
-            Err(e) => vec![(input.to_path_buf(), e.to_string())],
-        };
-        let succeeded = if failed.is_empty() { 1 } else { 0 };
-        print_batch_summary(succeeded, &failed, out)?;
-    }
-    result
+    run_result
 }
 
 fn run_convert_directory(
@@ -122,6 +150,7 @@ fn run_convert_directory(
     dry_run: bool,
     verbosity: Verbosity,
     warn_flags: WarnFlags,
+    temp_root: Option<&Path>,
     out: &mut dyn Write,
 ) -> Result<()> {
     let mut files: Vec<PathBuf> = std::fs::read_dir(input_dir)
@@ -157,6 +186,7 @@ fn run_convert_directory(
             dry_run,
             verbosity,
             warn_flags,
+            temp_root,
             out,
         ) {
             Ok(()) => succeeded.push(file.clone()),
@@ -197,6 +227,7 @@ fn run_convert_file(
     dry_run: bool,
     verbosity: Verbosity,
     warn_flags: WarnFlags,
+    temp_root: Option<&Path>, // None iff dry_run
     out: &mut dyn Write,
 ) -> Result<()> {
     // input_name is used in the layer-count summary and throughout; compute early.
@@ -349,17 +380,24 @@ fn run_convert_file(
     };
 
     // --- Subtitle preparation ------------------------------------------------
-    let temp_dir = tempfile::tempdir().map_err(|e| Error::Io {
-        path: PathBuf::from("<tempdir>"),
-        source: e,
-    })?;
+    // Carve a per-file subdir within the per-run temp dir (guaranteed Some here
+    // since we only reach this point when !dry_run).
+    let file_temp = {
+        let root = temp_root.expect("temp_root is Some when !dry_run");
+        let subdir = root.join(sanitize_basename(input));
+        std::fs::create_dir_all(&subdir).map_err(|e| Error::Io {
+            path: subdir.clone(),
+            source: e,
+        })?;
+        subdir
+    };
 
     let prepared_subs = match prepare_subtitles(
         input,
         &resolved.config.subtitles,
         &resolved.provenance,
         &probe,
-        temp_dir.path(),
+        &file_temp,
         out,
     ) {
         Ok(subs) => subs,
@@ -1041,6 +1079,18 @@ fn channels_label(n: u32) -> &'static str {
         6 => "5.1",
         _ => "?ch",
     }
+}
+
+/// Produce a filesystem-safe directory name from an input file's stem.
+/// Non-alphanumeric characters (except `-` and `_`) become `_`.
+fn sanitize_basename(input: &Path) -> String {
+    let stem = input
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "file".to_string());
+    stem.chars()
+        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .collect()
 }
 
 fn compute_output_path(

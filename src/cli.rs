@@ -57,6 +57,11 @@ pub enum Command {
         #[arg(short = 'n', long = "dry-run")]
         dry_run: bool,
 
+        /// Keep the temp directory after the run completes instead of deleting it.
+        /// Prints the preserved path at the end. Silent no-op under --dry-run.
+        #[arg(long = "keep-intermediates")]
+        keep_intermediates: bool,
+
         /// Overwrite existing output files. Shorthand for
         /// `--on-existing=overwrite`. Mutually exclusive with `--on-existing`.
         #[arg(short = 'f', long = "overwrite", conflicts_with = "on_existing")]
@@ -136,6 +141,7 @@ pub fn run() -> Result<()> {
             path,
             output_dir,
             dry_run,
+            keep_intermediates,
             overwrite,
             on_existing,
             verbose,
@@ -178,6 +184,7 @@ pub fn run() -> Result<()> {
                 dry_run,
                 verbosity,
                 warn_flags,
+                keep_intermediates,
                 &mut stdout,
             )
         }

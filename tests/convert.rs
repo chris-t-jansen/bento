@@ -209,6 +209,7 @@ fn run_convert_errors_on_missing_input() {
         false,
         Verbosity::Default,
         WarnFlags::default(),
+        false,
         &mut out,
     );
     assert!(matches!(result, Err(Error::PathNotFound(_))));
@@ -233,6 +234,7 @@ container = "mkv"
         false,
         Verbosity::Default,
         WarnFlags::default(),
+        false,
         &mut out,
     );
     assert!(
@@ -266,6 +268,7 @@ tracks = [{ source = 1 }]
         false,
         Verbosity::Default,
         WarnFlags::default(),
+        false,
         &mut out,
     );
     assert!(
@@ -299,6 +302,7 @@ tracks = [{ source = 1 }]
         false,
         Verbosity::Default,
         WarnFlags::default(),
+        false,
         &mut out,
     );
     assert!(result.is_ok(), "skip_silently should return Ok: {:?}", result);
@@ -328,6 +332,7 @@ tracks = [{ source = 1 }]
         false,
         Verbosity::Default,
         WarnFlags::default(),
+        false,
         &mut out,
     );
     assert!(result.is_ok(), "warn mode should skip and return Ok: {:?}", result);
@@ -366,6 +371,7 @@ tracks = [{ source = 1, lang = "jpn", title = "Japanese", default = true }]
         true,
         Verbosity::Default,
         WarnFlags::default(),
+        false,
         &mut out,
     );
     let text = String::from_utf8(out).unwrap();
@@ -404,6 +410,7 @@ container = "mkv"
         true,
         Verbosity::Default,
         WarnFlags::default(),
+        false,
         &mut out,
     );
     let text = String::from_utf8(out).unwrap();
@@ -446,6 +453,7 @@ tracks = [{ source = 1, lang = "jpn", default = true }]
         true,
         Verbosity::Default,
         WarnFlags::default(),
+        false,
         &mut out,
     );
     match result {
@@ -472,6 +480,7 @@ fn dry_run_summary_footer_suppressed_in_quiet_mode() {
         true,
         Verbosity::Quiet,
         WarnFlags::default(),
+        false,
         &mut out,
     );
     let text = String::from_utf8(out).unwrap();
@@ -495,6 +504,7 @@ fn dry_run_summary_footer_shown_in_default_mode() {
         true,
         Verbosity::Default,
         WarnFlags::default(),
+        false,
         &mut out,
     );
     let text = String::from_utf8(out).unwrap();
@@ -540,6 +550,7 @@ tracks = [
         true,
         Verbosity::Default,
         WarnFlags::default(),
+        false,
         &mut out,
     );
     let text = String::from_utf8(out).unwrap();
@@ -642,7 +653,7 @@ fn no_warn_multiple_burns_suppresses_warning() {
 
     // Without suppression: warning is present.
     let mut out = buf();
-    let _ = run_convert(&video, None, None, false, Verbosity::Default, WarnFlags::default(), &mut out);
+    let _ = run_convert(&video, None, None, false, Verbosity::Default, WarnFlags::default(), false, &mut out);
     let text = String::from_utf8(out).unwrap();
     assert!(
         text.contains("subtitle tracks have mux=\"burn\""),
@@ -659,6 +670,7 @@ fn no_warn_multiple_burns_suppresses_warning() {
         false,
         Verbosity::Default,
         WarnFlags { no_warn_multiple_burns: true, ..WarnFlags::default() },
+        false,
         &mut out,
     );
     let text = String::from_utf8(out).unwrap();
@@ -676,7 +688,7 @@ fn no_warn_burn_metadata_suppresses_warning() {
     dir.write("bento.toml", burn_metadata_toml());
 
     let mut out = buf();
-    let _ = run_convert(&video, None, None, false, Verbosity::Default, WarnFlags::default(), &mut out);
+    let _ = run_convert(&video, None, None, false, Verbosity::Default, WarnFlags::default(), false, &mut out);
     let text = String::from_utf8(out).unwrap();
     assert!(
         text.contains("burn subtitle track has soft-only metadata"),
@@ -692,6 +704,7 @@ fn no_warn_burn_metadata_suppresses_warning() {
         false,
         Verbosity::Default,
         WarnFlags { no_warn_burn_metadata: true, ..WarnFlags::default() },
+        false,
         &mut out,
     );
     let text = String::from_utf8(out).unwrap();
@@ -709,7 +722,7 @@ fn no_warn_no_default_suppresses_audio_warning() {
     dir.write("bento.toml", audio_no_default_toml());
 
     let mut out = buf();
-    let _ = run_convert(&video, None, None, false, Verbosity::Default, WarnFlags::default(), &mut out);
+    let _ = run_convert(&video, None, None, false, Verbosity::Default, WarnFlags::default(), false, &mut out);
     let text = String::from_utf8(out).unwrap();
     assert!(
         text.contains("no audio track has default=true"),
@@ -725,6 +738,7 @@ fn no_warn_no_default_suppresses_audio_warning() {
         false,
         Verbosity::Default,
         WarnFlags { no_warn_no_default: true, ..WarnFlags::default() },
+        false,
         &mut out,
     );
     let text = String::from_utf8(out).unwrap();
@@ -742,7 +756,7 @@ fn no_warn_no_default_suppresses_subtitle_warning() {
     dir.write("bento.toml", subtitle_no_default_toml());
 
     let mut out = buf();
-    let _ = run_convert(&video, None, None, false, Verbosity::Default, WarnFlags::default(), &mut out);
+    let _ = run_convert(&video, None, None, false, Verbosity::Default, WarnFlags::default(), false, &mut out);
     let text = String::from_utf8(out).unwrap();
     assert!(
         text.contains("no subtitle track has default=true"),
@@ -758,6 +772,7 @@ fn no_warn_no_default_suppresses_subtitle_warning() {
         false,
         Verbosity::Default,
         WarnFlags { no_warn_no_default: true, ..WarnFlags::default() },
+        false,
         &mut out,
     );
     let text = String::from_utf8(out).unwrap();
@@ -775,7 +790,7 @@ fn no_warn_crf_codec_mismatch_suppresses_warning() {
     dir.write("bento.toml", crf_mismatch_toml());
 
     let mut out = buf();
-    let _ = run_convert(&video, None, None, false, Verbosity::Default, WarnFlags::default(), &mut out);
+    let _ = run_convert(&video, None, None, false, Verbosity::Default, WarnFlags::default(), false, &mut out);
     let text = String::from_utf8(out).unwrap();
     assert!(
         text.contains("encoder.crf"),
@@ -791,6 +806,7 @@ fn no_warn_crf_codec_mismatch_suppresses_warning() {
         false,
         Verbosity::Default,
         WarnFlags { no_warn_crf_codec_mismatch: true, ..WarnFlags::default() },
+        false,
         &mut out,
     );
     let text = String::from_utf8(out).unwrap();
@@ -833,7 +849,7 @@ tracks = [
 
     // Without suppression: all three warnings appear.
     let mut out = buf();
-    let _ = run_convert(&video, None, None, false, Verbosity::Default, WarnFlags::default(), &mut out);
+    let _ = run_convert(&video, None, None, false, Verbosity::Default, WarnFlags::default(), false, &mut out);
     let text = String::from_utf8(out).unwrap();
     assert!(text.contains("encoder.crf=26"), "CRF warning expected:\n{}", text);
     assert!(text.contains("subtitle tracks have mux=\"burn\""), "multiple-burns warning expected:\n{}", text);
@@ -848,6 +864,7 @@ tracks = [
         false,
         Verbosity::Default,
         WarnFlags { no_warnings: true, ..WarnFlags::default() },
+        false,
         &mut out,
     );
     let text = String::from_utf8(out).unwrap();
@@ -856,4 +873,98 @@ tracks = [
     assert!(!text.contains("burn subtitle track has soft-only metadata"), "burn-metadata warning should be suppressed:\n{}", text);
     // The hard error (two audio defaults) is still present.
     assert!(text.contains("multiple audio tracks have default=true"), "hard error must still appear:\n{}", text);
+}
+
+// ---------------------------------------------------------------------------
+// --keep-intermediates
+// ---------------------------------------------------------------------------
+
+#[test]
+fn keep_intermediates_prints_preserved_path() {
+    let dir = TestDir::new("keep_intermediates_yes");
+    let video = dir.write("episode01.mkv", "");
+    dir.write(
+        "bento.toml",
+        r#"
+[audio]
+tracks = [{ source = 1, lang = "jpn", default = true }]
+"#,
+    );
+    let mut out = buf();
+    let _ = run_convert(
+        &video,
+        None,
+        None,
+        false,
+        Verbosity::Default,
+        WarnFlags::default(),
+        true, // keep_intermediates
+        &mut out,
+    );
+    let text = String::from_utf8(out).unwrap();
+    assert!(
+        text.contains("Intermediate files preserved at:"),
+        "expected preserve message, got:\n{}",
+        text
+    );
+}
+
+#[test]
+fn keep_intermediates_false_no_preserve_message() {
+    let dir = TestDir::new("keep_intermediates_no");
+    let video = dir.write("episode01.mkv", "");
+    dir.write(
+        "bento.toml",
+        r#"
+[audio]
+tracks = [{ source = 1, lang = "jpn", default = true }]
+"#,
+    );
+    let mut out = buf();
+    let _ = run_convert(
+        &video,
+        None,
+        None,
+        false,
+        Verbosity::Default,
+        WarnFlags::default(),
+        false, // keep_intermediates
+        &mut out,
+    );
+    let text = String::from_utf8(out).unwrap();
+    assert!(
+        !text.contains("Intermediate files preserved at:"),
+        "unexpected preserve message:\n{}",
+        text
+    );
+}
+
+#[test]
+fn dry_run_keep_intermediates_silent_noop() {
+    let dir = TestDir::new("keep_intermediates_dry_run");
+    let video = dir.write("episode01.mkv", "");
+    dir.write(
+        "bento.toml",
+        r#"
+[audio]
+tracks = [{ source = 1, lang = "jpn", default = true }]
+"#,
+    );
+    let mut out = buf();
+    let _ = run_convert(
+        &video,
+        None,
+        None,
+        true,  // dry_run
+        Verbosity::Default,
+        WarnFlags::default(),
+        true, // keep_intermediates
+        &mut out,
+    );
+    let text = String::from_utf8(out).unwrap();
+    assert!(
+        !text.contains("Intermediate files preserved at:"),
+        "--dry-run with --keep-intermediates should be a silent no-op:\n{}",
+        text
+    );
 }
