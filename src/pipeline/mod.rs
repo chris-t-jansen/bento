@@ -113,12 +113,14 @@ pub fn run_convert(input: &Path, out: &mut dyn Write, opts: ConvertOptions) -> R
                 .map_err(crate::io_render_err)?;
             writeln!(out).map_err(crate::io_render_err)?;
         } else if sp.exists() {
-            writeln!(
-                out,
-                "warning: --generate-config: sidecar already exists, not overwriting: {}",
-                sp.display()
-            )
-            .map_err(crate::io_render_err)?;
+            if !warn_flags.no_warnings {
+                writeln!(
+                    out,
+                    "warning: --generate-config: sidecar already exists, not overwriting: {}",
+                    sp.display()
+                )
+                .map_err(crate::io_render_err)?;
+            }
         } else {
             write_sidecar(&cli_config, sp)?;
             writeln!(out, "Wrote config to: {}", sp.display()).map_err(crate::io_render_err)?;
