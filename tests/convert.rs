@@ -794,6 +794,166 @@ tracks = [
 }
 
 // ---------------------------------------------------------------------------
+// --no-warn-redundant
+// ---------------------------------------------------------------------------
+
+fn redundant_dir_and_sidecar_toml() -> (&'static str, &'static str) {
+    // Both layers set `audio.bitrate = 192` — a redundant override.
+    // Omits `audio.tracks` so the run exits with RequiredFieldMissing before
+    // ffprobe is invoked; warnings are emitted before that check.
+    let dir = "[audio]\nbitrate = 192\n";
+    let sidecar = "[audio]\nbitrate = 192\n";
+    (dir, sidecar)
+}
+
+#[test]
+fn no_warn_redundant_fires_when_sidecar_duplicates_directory_value() {
+    let dir = TestDir::new("warn_redundant_fires");
+    let video = dir.write("episode01.mkv", "");
+    let (dir_toml, sidecar_toml) = redundant_dir_and_sidecar_toml();
+    dir.write("bento.toml", dir_toml);
+    dir.write("episode01.mkv.bento.toml", sidecar_toml);
+
+    let mut out = buf();
+    let _ = run_convert(
+        &video,
+        &mut out,
+        ConvertOptions { dry_run: true, ..Default::default() },
+    );
+    let text = String::from_utf8(out).unwrap();
+    assert!(
+        text.contains("redundant override"),
+        "expected redundancy warning in output:\n{}",
+        text
+    );
+    assert!(
+        text.contains("audio.bitrate"),
+        "warning should name the redundant field:\n{}",
+        text
+    );
+}
+
+#[test]
+fn no_warn_redundant_suppressed_by_flag() {
+    let dir = TestDir::new("warn_redundant_flag");
+    let video = dir.write("episode01.mkv", "");
+    let (dir_toml, sidecar_toml) = redundant_dir_and_sidecar_toml();
+    dir.write("bento.toml", dir_toml);
+    dir.write("episode01.mkv.bento.toml", sidecar_toml);
+
+    let mut out = buf();
+    let _ = run_convert(
+        &video,
+        &mut out,
+        ConvertOptions {
+            dry_run: true,
+            warn_flags: WarnFlags { no_warn_redundant: true, ..WarnFlags::default() },
+            ..Default::default()
+        },
+    );
+    let text = String::from_utf8(out).unwrap();
+    assert!(
+        !text.contains("redundant override"),
+        "redundancy warning should be suppressed by --no-warn-redundant:\n{}",
+        text
+    );
+}
+
+#[test]
+fn no_warn_redundant_suppressed_by_no_warnings() {
+    let dir = TestDir::new("warn_redundant_bulk");
+    let video = dir.write("episode01.mkv", "");
+    let (dir_toml, sidecar_toml) = redundant_dir_and_sidecar_toml();
+    dir.write("bento.toml", dir_toml);
+    dir.write("episode01.mkv.bento.toml", sidecar_toml);
+
+    let mut out = buf();
+    let _ = run_convert(
+        &video,
+        &mut out,
+        ConvertOptions {
+            dry_run: true,
+            warn_flags: WarnFlags { no_warnings: true, ..WarnFlags::default() },
+            ..Default::default()
+        },
+    );
+    let text = String::from_utf8(out).unwrap();
+    assert!(
+        !text.contains("redundant override"),
+        "redundancy warning should be suppressed by --no-warnings:\n{}",
+        text
+    );
+}
+
+// ---------------------------------------------------------------------------
+// --no-warn-missing
+// ---------------------------------------------------------------------------
+
+// Note: the missing-setting warning fires whenever a field resolves from
+// baked-in defaults rather than a user config layer. In a developer environment
+// with a complete global config (~/.config/bento/config.toml), the warning may
+// not fire at all in integration tests — the suppression tests below are
+// environment-independent (they assert the warning is NOT present, which is
+// trivially true when no global config is absent and all defaults are covered).
+//
+// The unit tests in pipeline::tests cover the `detect_redundancies` / provenance
+// logic directly without environment dependencies.
+
+// Missing-setting warning tests use a config without `audio.tracks` so the run
+// exits with RequiredFieldMissing before reaching ffprobe. Warnings (step 3 in
+// the pipeline) are emitted before that required-field check (step 4), so the
+// assertion about warning presence/absence is valid even though result is Err.
+
+#[test]
+fn no_warn_missing_suppressed_by_flag() {
+    let dir = TestDir::new("warn_missing_flag");
+    let video = dir.write("episode01.mkv", "");
+    // No audio.tracks → run exits before ffprobe; missing-setting warning emitted first.
+    dir.write("bento.toml", "[output]\ncontainer = \"mp4\"\n");
+
+    let mut out = buf();
+    let _ = run_convert(
+        &video,
+        &mut out,
+        ConvertOptions {
+            dry_run: true,
+            warn_flags: WarnFlags { no_warn_missing: true, ..WarnFlags::default() },
+            ..Default::default()
+        },
+    );
+    let text = String::from_utf8(out).unwrap();
+    assert!(
+        !text.contains("baked-in defaults"),
+        "--no-warn-missing should suppress the missing-setting warning:\n{}",
+        text
+    );
+}
+
+#[test]
+fn no_warn_missing_suppressed_by_no_warnings() {
+    let dir = TestDir::new("warn_missing_bulk");
+    let video = dir.write("episode01.mkv", "");
+    dir.write("bento.toml", "[output]\ncontainer = \"mp4\"\n");
+
+    let mut out = buf();
+    let _ = run_convert(
+        &video,
+        &mut out,
+        ConvertOptions {
+            dry_run: true,
+            warn_flags: WarnFlags { no_warnings: true, ..WarnFlags::default() },
+            ..Default::default()
+        },
+    );
+    let text = String::from_utf8(out).unwrap();
+    assert!(
+        !text.contains("baked-in defaults"),
+        "--no-warnings should suppress the missing-setting warning:\n{}",
+        text
+    );
+}
+
+// ---------------------------------------------------------------------------
 // --keep-intermediates
 // ---------------------------------------------------------------------------
 

@@ -36,9 +36,7 @@ pub struct WarnFlags {
     /// Suppresses both `[audio].warn_no_default` and `[subtitles].warn_no_default`.
     pub no_warn_no_default: bool,
     pub no_warn_crf_codec_mismatch: bool,
-    /// Warning not yet emitted; flag accepted for forward compatibility.
     pub no_warn_missing: bool,
-    /// Warning not yet emitted; flag accepted for forward compatibility.
     pub no_warn_redundant: bool,
     /// Bulk flag: equivalent to setting every individual flag above.
     pub no_warnings: bool,
@@ -146,6 +144,7 @@ pub fn run_convert(input: &Path, out: &mut dyn Write, opts: ConvertOptions) -> R
             &cli_config,
             dry_run,
             verbosity,
+            warn_flags,
             temp_root,
             out,
         )
@@ -162,6 +161,7 @@ pub fn run_convert(input: &Path, out: &mut dyn Write, opts: ConvertOptions) -> R
             &cli_config,
             dry_run,
             verbosity,
+            warn_flags,
             temp_root,
             out,
         );
@@ -205,6 +205,7 @@ fn run_convert_directory(
     cli_config: &Config,
     dry_run: bool,
     verbosity: Verbosity,
+    warn_flags: WarnFlags,
     temp_root: Option<&Path>,
     out: &mut dyn Write,
 ) -> Result<()> {
@@ -240,6 +241,7 @@ fn run_convert_directory(
             cli_config,
             dry_run,
             verbosity,
+            warn_flags,
             temp_root,
             out,
         ) {
@@ -280,6 +282,7 @@ fn run_convert_file(
     cli_config: &Config,
     dry_run: bool,
     verbosity: Verbosity,
+    warn_flags: WarnFlags,
     temp_root: Option<&Path>, // None iff dry_run
     out: &mut dyn Write,
 ) -> Result<()> {
@@ -294,10 +297,65 @@ fn run_convert_file(
     // --- Config resolution and validation ------------------------------------
     // Add the CLI layer at the top of the stack if any CLI overrides were set.
     let mut layers = discover_layers(input, out)?;
+
+    // Redundancy check on config-file layers before the CLI layer is added.
+    // CLI flags are one-off overrides; redundancy is meaningful only between
+    // persistent config files the user can edit.
+    if !warn_flags.no_warnings && !warn_flags.no_warn_redundant {
+        for (path, lower_layer, higher_layer) in detect_redundancies(&layers) {
+            writeln!(
+                out,
+                "warning: redundant override: `{}` in {} is already set to \
+                 the same value in {}; the setting in the {} config can be removed.",
+                path,
+                layer_inline(&higher_layer),
+                layer_inline(&lower_layer),
+                higher_layer.kind(),
+            )
+            .map_err(crate::io_render_err)?;
+        }
+    }
+
     if cli_config != &Config::default() {
         layers.push((Layer::Cli, cli_config.clone()));
     }
     let resolved = resolve(layers);
+
+    // Missing-setting check: fields that fell all the way through to baked-in
+    // defaults without being set in any user config layer.
+    if !warn_flags.no_warnings && !warn_flags.no_warn_missing {
+        let default_paths: Vec<&String> = resolved
+            .provenance
+            .iter()
+            .filter(|(_, layer)| **layer == crate::resolve::Layer::Defaults)
+            .map(|(path, _)| path)
+            .collect();
+        if !default_paths.is_empty() {
+            writeln!(
+                out,
+                "warning: {} setting{} resolved from baked-in defaults \
+                 (not present in any config file):",
+                default_paths.len(),
+                if default_paths.len() == 1 { "" } else { "s" },
+            )
+            .map_err(crate::io_render_err)?;
+            let cfg_val = toml::Value::try_from(&resolved.config)
+                .expect("Config is always serializable");
+            for path in &default_paths {
+                let val_str = get_toml_at_path(&cfg_val, path)
+                    .map(|v| format!(" = {}", toml_value_display(v)))
+                    .unwrap_or_default();
+                writeln!(out, "  {}{}", path, val_str).map_err(crate::io_render_err)?;
+            }
+            writeln!(
+                out,
+                "  Run `bento repair` to add these to your global config, \
+                 or pass --no-warn-missing to suppress.",
+            )
+            .map_err(crate::io_render_err)?;
+        }
+    }
+
     let issues = validate(&resolved);
 
     let error_count = issues
@@ -1241,6 +1299,118 @@ fn sanitize_basename(input: &Path) -> String {
         .collect()
 }
 
+// =============================================================================
+// Warning helpers
+// =============================================================================
+
+/// Concise inline representation of a layer for use in warning messages.
+fn layer_inline(layer: &crate::resolve::Layer) -> String {
+    use crate::resolve::Layer;
+    match layer {
+        Layer::Defaults => "built-in defaults".to_string(),
+        Layer::Global(p) => format!("global config ({})", p.display()),
+        Layer::Directory(p) => format!("directory config ({})", p.display()),
+        Layer::PerFile(p) => format!("per-file config ({})", p.display()),
+        Layer::Cli => "CLI flags".to_string(),
+    }
+}
+
+/// Collect all leaf paths and their TOML values from a serialized config.
+/// Arrays are treated as atomic leaves per the wholesale-replace rule.
+fn collect_toml_leaves(
+    value: &toml::Value,
+    prefix: &str,
+) -> std::collections::HashMap<String, toml::Value> {
+    let mut map = std::collections::HashMap::new();
+    if let toml::Value::Table(table) = value {
+        for (k, v) in table {
+            let path = if prefix.is_empty() {
+                k.clone()
+            } else {
+                format!("{}.{}", prefix, k)
+            };
+            if let toml::Value::Table(_) = v {
+                map.extend(collect_toml_leaves(v, &path));
+            } else {
+                map.insert(path, v.clone());
+            }
+        }
+    }
+    map
+}
+
+/// Detect redundant overrides: fields where a higher-precedence config-file
+/// layer sets the same value already present in a lower-precedence layer.
+/// Returns `(field_path, lower_layer, higher_layer)` for each redundancy.
+/// CLI and Defaults layers are excluded — redundancy is meaningful only
+/// between persistent config files the user can edit.
+fn detect_redundancies(
+    layers: &[(crate::resolve::Layer, Config)],
+) -> Vec<(String, crate::resolve::Layer, crate::resolve::Layer)> {
+    use crate::resolve::Layer;
+
+    let file_layers: Vec<(&Layer, std::collections::HashMap<String, toml::Value>)> = layers
+        .iter()
+        .filter(|(layer, _)| !matches!(layer, Layer::Cli | Layer::Defaults))
+        .map(|(layer, cfg)| {
+            let value = toml::Value::try_from(cfg).expect("Config is always serializable");
+            let leaves = collect_toml_leaves(&value, "");
+            (layer, leaves)
+        })
+        .collect();
+
+    let mut redundancies = Vec::new();
+    for i in 0..file_layers.len() {
+        let (lower_layer, ref lower_leaves) = file_layers[i];
+        for j in (i + 1)..file_layers.len() {
+            let (higher_layer, ref higher_leaves) = file_layers[j];
+            for (path, higher_val) in higher_leaves {
+                if let Some(lower_val) = lower_leaves.get(path) {
+                    if higher_val == lower_val {
+                        redundancies.push((
+                            path.clone(),
+                            (*lower_layer).clone(),
+                            (*higher_layer).clone(),
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    redundancies
+}
+
+/// Look up a dotted path in a TOML value tree.
+fn get_toml_at_path<'a>(root: &'a toml::Value, path: &str) -> Option<&'a toml::Value> {
+    let mut cur = root;
+    for part in path.split('.') {
+        if let toml::Value::Table(table) = cur {
+            cur = table.get(part)?;
+        } else {
+            return None;
+        }
+    }
+    Some(cur)
+}
+
+/// Short display for a TOML value (arrays and tables summarized).
+fn toml_value_display(v: &toml::Value) -> String {
+    match v {
+        toml::Value::String(s) => format!("{:?}", s),
+        toml::Value::Integer(i) => i.to_string(),
+        toml::Value::Float(f) => f.to_string(),
+        toml::Value::Boolean(b) => b.to_string(),
+        toml::Value::Array(a) => format!(
+            "[{} item{}]",
+            a.len(),
+            if a.len() == 1 { "" } else { "s" }
+        ),
+        toml::Value::Table(_) => "{…}".to_string(),
+        toml::Value::Datetime(d) => d.to_string(),
+    }
+}
+
 fn compute_output_path(
     input: &Path,
     config: &Config,
@@ -1276,4 +1446,139 @@ fn compute_output_path(
     }
 
     Ok((destination.join(output_name), episode_number))
+}
+
+// =============================================================================
+// Tests
+// =============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Config;
+    use std::path::PathBuf;
+
+    fn dir_layer(path: &str) -> crate::resolve::Layer {
+        crate::resolve::Layer::Directory(PathBuf::from(path))
+    }
+
+    fn per_file_layer(path: &str) -> crate::resolve::Layer {
+        crate::resolve::Layer::PerFile(PathBuf::from(path))
+    }
+
+    fn parse(s: &str) -> Config {
+        Config::from_toml_str(s).unwrap()
+    }
+
+    #[test]
+    fn detect_redundancies_finds_same_scalar_in_higher_layer() {
+        let layers = vec![
+            (dir_layer("/show/bento.toml"), parse("[audio]\nbitrate = 192\n")),
+            (
+                per_file_layer("/show/ep01.mkv.bento.toml"),
+                parse("[audio]\nbitrate = 192\n"),
+            ),
+        ];
+        let r = detect_redundancies(&layers);
+        assert!(
+            r.iter().any(|(p, _, _)| p == "audio.bitrate"),
+            "expected audio.bitrate flagged as redundant: {:?}",
+            r
+        );
+    }
+
+    #[test]
+    fn detect_redundancies_ignores_different_values() {
+        let layers = vec![
+            (dir_layer("/show/bento.toml"), parse("[audio]\nbitrate = 192\n")),
+            (
+                per_file_layer("/show/ep01.mkv.bento.toml"),
+                parse("[audio]\nbitrate = 128\n"),
+            ),
+        ];
+        let r = detect_redundancies(&layers);
+        assert!(
+            !r.iter().any(|(p, _, _)| p == "audio.bitrate"),
+            "different values must not be flagged: {:?}",
+            r
+        );
+    }
+
+    #[test]
+    fn detect_redundancies_ignores_cli_layer() {
+        let layers = vec![
+            (dir_layer("/show/bento.toml"), parse("[audio]\nbitrate = 192\n")),
+            (crate::resolve::Layer::Cli, parse("[audio]\nbitrate = 192\n")),
+        ];
+        let r = detect_redundancies(&layers);
+        assert!(
+            r.is_empty(),
+            "CLI layer must not be included in redundancy checks: {:?}",
+            r
+        );
+    }
+
+    #[test]
+    fn detect_redundancies_flags_identical_list() {
+        let tracks = "[audio]\ntracks = [{ source = 1, lang = \"jpn\", default = true }]\n";
+        let layers = vec![
+            (dir_layer("/show/bento.toml"), parse(tracks)),
+            (per_file_layer("/show/ep01.mkv.bento.toml"), parse(tracks)),
+        ];
+        let r = detect_redundancies(&layers);
+        assert!(
+            r.iter().any(|(p, _, _)| p == "audio.tracks"),
+            "identical track list should be flagged: {:?}",
+            r
+        );
+    }
+
+    #[test]
+    fn detect_redundancies_does_not_flag_different_list() {
+        let lower = "[audio]\ntracks = [{ source = 1, lang = \"jpn\", default = true }]\n";
+        let higher =
+            "[audio]\ntracks = [{ source = 2, lang = \"eng\", default = true }]\n";
+        let layers = vec![
+            (dir_layer("/show/bento.toml"), parse(lower)),
+            (per_file_layer("/show/ep01.mkv.bento.toml"), parse(higher)),
+        ];
+        let r = detect_redundancies(&layers);
+        assert!(
+            !r.iter().any(|(p, _, _)| p == "audio.tracks"),
+            "different track lists must not be flagged: {:?}",
+            r
+        );
+    }
+
+    #[test]
+    fn get_toml_at_path_looks_up_nested_key() {
+        let cfg = parse("[video]\nencoder = { name = \"x264\", crf = 20 }\n");
+        let val = toml::Value::try_from(&cfg).unwrap();
+        let crf = get_toml_at_path(&val, "video.encoder.crf");
+        assert_eq!(crf, Some(&toml::Value::Integer(20)));
+    }
+
+    #[test]
+    fn get_toml_at_path_returns_none_for_missing_key() {
+        let cfg = parse("[video]\npreset = \"medium\"\n");
+        let val = toml::Value::try_from(&cfg).unwrap();
+        assert!(get_toml_at_path(&val, "video.encoder.crf").is_none());
+    }
+
+    #[test]
+    fn toml_value_display_formats_primitives() {
+        assert_eq!(toml_value_display(&toml::Value::Integer(42)), "42");
+        assert_eq!(
+            toml_value_display(&toml::Value::String("mp4".into())),
+            "\"mp4\""
+        );
+        assert_eq!(toml_value_display(&toml::Value::Boolean(true)), "true");
+        assert_eq!(
+            toml_value_display(&toml::Value::Array(vec![
+                toml::Value::Integer(1),
+                toml::Value::Integer(2),
+            ])),
+            "[2 items]"
+        );
+    }
 }
