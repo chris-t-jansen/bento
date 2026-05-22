@@ -56,12 +56,9 @@ Bento depends on `ffmpeg` (and its bundled tools, including `ffprobe`) for all e
 - crates.io has a per-crate size limit (10 MB default) that makes binary bundling impractical.
 - `cargo install` builds from source, so bundled binaries would require build-script gymnastics.
 
-Instead, Bento uses the **first-run-download pattern** (as used by Playwright, esbuild, and similar tools):
+Bento expects `ffmpeg` to be available on the user's `PATH`. The `bento check` subcommand verifies presence and version; if `ffmpeg` is missing, Bento prints platform-appropriate install hints (Homebrew on macOS, `apt`/`dnf` on Linux, the ffmpeg.org download page elsewhere) and exits non-zero. Bento does **not** download `ffmpeg` itself.
 
-- On first run — or via the `bento check` subcommand — Bento checks for `ffmpeg` on `PATH`.
-- If present, Bento uses it.
-- If missing, Bento downloads a platform-appropriate binary into a cache directory (e.g. `~/.local/share/bento/bin/`) and uses that.
-- Users with an existing installation are not forced to download a duplicate.
+The first-run-download pattern (as used by Playwright, esbuild, and similar tools) was considered and deferred. Auto-downloading raises a cluster of design questions Bento doesn't yet have answers to: which build to fetch (static vs. shared, which fork), where to cache it (XDG data dir? per-user?), how to update it, and how to surface trust/provenance for a binary the tool fetched on the user's behalf. The install-hint route punts those questions to the platform package manager, which has already answered them. Revisit if the friction of "go install ffmpeg" turns out to be a real adoption barrier.
 
 ### Version checking
 
@@ -79,7 +76,7 @@ Warning bands:
 | Same major as tested | Silent |
 | Major version above tested | Warn (potentially breaking under SemVer) |
 
-Version checking runs at well-defined moments — on `bento check`, and on the first use of any newly-downloaded binary. Version checking does *not* run on every encode invocation, to avoid startup latency.
+Version checking runs on `bento check`. It does *not* run on every encode invocation, to avoid startup latency.
 
 ---
 
@@ -635,9 +632,9 @@ If `<path>` is a directory, resolves and prints for every valid video file in th
 
 Usage: `bento check [-y]`
 
-Verifies that Bento's external dependencies are present and usable: `ffmpeg` and the global `config.toml`. If either is missing, offers via prompt to install or generate it. This is the same logic that runs implicitly on first use of Bento; `check` is the explicit re-entry point after the user has accidentally deleted the binary, broken their global config, etc.
+Verifies that Bento's external dependencies are present and usable: `ffmpeg` (with version check against the pinned minimum and tested version) and the global `config.toml`. If `ffmpeg` is missing, Bento prints platform-appropriate install hints and exits non-zero. If the global config is missing, Bento offers via prompt to generate it. This is the explicit re-entry point after the user has accidentally broken their global config, upgraded `ffmpeg` to an unsupported version, etc.
 
-The `-y` / `--yes` flag auto-confirms all install/generate prompts. In non-interactive contexts (no TTY) without `-y`, `check` errors instead of hanging — matching the behavior of `apt`, `dnf`, etc.
+The `-y` / `--yes` flag auto-confirms the global-config generate prompt. In non-interactive contexts (no TTY) without `-y`, `check` errors instead of hanging — matching the behavior of `apt`, `dnf`, etc.
 
 #### `repair`
 
@@ -810,14 +807,13 @@ These are minor surface and don't warrant a dedicated design pass; ad-hoc resolu
 - **Behavior of the default summary line** — whether it's truly default-on, or behind a flag. Currently planned as default-on.
 - **Pre-built binary distribution.** Deliberately deferred; revisit only if a compelling reason emerges.
 - **External audio tracks.** Jellyfin's external-track feature also supports sidecar audio (`.mp3`, `.aac`, `.dts`, etc.) using the same filename convention as external subtitles. Adding `mux = "external"` to `[audio]` would be symmetric with the subtitle case (already in the schema for `[subtitles]`) and could reuse the same filename construction. Deferred from v1: the canonical anime use case is well-served by muxed audio, and the surrounding design questions (transcode targets for external streams, source-stream copy semantics, interaction with `force_bitrate` / `force_mixdown`) didn't have clear answers under the same time budget. Revisit if a real use case emerges; the schema delta is small.
-- **External-binary cache update mechanism.** First-run download is settled; updating cached binaries (e.g. `bento check --refresh`) is deferred. "Download once and leave alone" is fine for v1; users with `ffmpeg` on their `PATH` are unaffected either way.
 - **Resolved-config data shape.** Internally, every settable field is `Option<T>` at every layer until resolution; after resolution, fields-with-defaults could be guaranteed non-None and represented as `T`, pushing the "is this set?" question into the type system and removing `.unwrap_or(default)` calls scattered through the encoder builder. Truly required no-default fields stay `Option<T>` until the missing-field check fires. The cost is a parallel `ResolvedConfig` type maintained alongside the layer-level `Config`. Deferred until the encoder builder stabilizes — the call-site shape will be clearer then, and the `.unwrap_or` pattern is annoying but not broken in the meantime.
 
 ---
 
 ## Out of Scope (for now)
 
-- Bundling `ffmpeg` into the crate. Explicitly rejected; first-run download is the path forward.
+- Bundling `ffmpeg` into the crate. Explicitly rejected; users install `ffmpeg` themselves via their platform package manager, and `bento check` surfaces install hints if it's missing.
 - Hardware-accelerated encoding (NVENC, QuickSync, VideoToolbox). Not relevant to current goals; could be added later.
 - Recursive directory traversal. Current script is non-recursive; no reason to change that yet.
 - A daemon/watch mode. Out of scope.
