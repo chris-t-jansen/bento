@@ -36,9 +36,9 @@ pub struct WarnFlags {
     /// Suppresses both `[audio].warn_no_default` and `[subtitles].warn_no_default`.
     pub no_warn_no_default: bool,
     pub no_warn_crf_codec_mismatch: bool,
-    /// Placeholder — missing-setting warnings not yet emitted.
+    /// Warning not yet emitted; flag accepted for forward compatibility.
     pub no_warn_missing: bool,
-    /// Placeholder — redundant-override warnings not yet emitted.
+    /// Warning not yet emitted; flag accepted for forward compatibility.
     pub no_warn_redundant: bool,
     /// Bulk flag: equivalent to setting every individual flag above.
     pub no_warnings: bool,
@@ -122,7 +122,7 @@ pub fn run_convert(input: &Path, out: &mut dyn Write, opts: ConvertOptions) -> R
             )
             .map_err(crate::io_render_err)?;
         } else {
-            write_sidecar(&cli_config, sp, out)?;
+            write_sidecar(&cli_config, sp)?;
             writeln!(out, "Wrote config to: {}", sp.display()).map_err(crate::io_render_err)?;
         }
     }
@@ -545,14 +545,14 @@ fn build_cli_config(
         config.video.warn_crf_codec_mismatch = Some(false);
     }
     // no_warn_missing and no_warn_redundant are accepted but have no Config
-    // counterparts yet; they remain CLI-only no-ops for now.
+    // counterparts; they are CLI-only no-ops.
 
     Ok(config)
 }
 
 /// Write the CLI-override config to a sidecar file, stripping empty sections
 /// so only the fields that were actually set appear in the output.
-fn write_sidecar(cli_config: &Config, path: &Path, out: &mut dyn Write) -> Result<()> {
+fn write_sidecar(cli_config: &Config, path: &Path) -> Result<()> {
     use std::io::Write as _;
 
     let value = toml::Value::try_from(cli_config).expect("Config is always serializable");
@@ -592,7 +592,6 @@ fn write_sidecar(cli_config: &Config, path: &Path, out: &mut dyn Write) -> Resul
             source: e,
         })?;
     }
-    let _ = out; // reserved for future verbose output
     Ok(())
 }
 
@@ -625,8 +624,7 @@ fn run_ffmpeg_encode(
     use std::io::BufRead;
     use std::process::Stdio;
 
-    // Build full arg list with verbosity-appropriate global flags prepended.
-    // base_args starts with "-y -i input ..." (no -loglevel, removed from ffmpeg_args.rs).
+    // Build full arg list: -loglevel and -progress flags prepended to base_args.
     let full_args: Vec<String> = match verbosity {
         Verbosity::Quiet => {
             let mut a = vec!["-loglevel".into(), "error".into()];

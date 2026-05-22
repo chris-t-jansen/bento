@@ -13,8 +13,14 @@
 //! (which must be resolved before encoding) and [`Severity::Warning`]
 //! (informational; suppressible per the warnings index).
 
+use std::sync::LazyLock;
+
 use crate::config::*;
 use crate::resolve::Resolved;
+
+static TEMPLATE_VAR_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"\{([A-Za-z_][A-Za-z0-9_]*)(?::[^}]*)?\}").unwrap()
+});
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Severity {
@@ -96,8 +102,7 @@ fn validate_output(output: &Output, issues: &mut Vec<ValidationIssue>) {
     let meta = output.metadata.as_ref();
 
     // Parse the template and verify each {varname} reference is resolvable.
-    let var_re = regex::Regex::new(r"\{([A-Za-z_][A-Za-z0-9_]*)(?::[^}]*)?\}").unwrap();
-    for cap in var_re.captures_iter(template) {
+    for cap in TEMPLATE_VAR_RE.captures_iter(template) {
         let var_name: &str = &cap[1];
 
         if BUILTINS.contains(&var_name) {
@@ -609,7 +614,7 @@ tracks = [
         assert!(!warnings(&issues).iter().any(|w| w.path == "audio.tracks"));
     }
 
-    // --- 1-based source index enforcement (Phase 6d) ----------------------
+    // --- 1-based source index enforcement ----------------------------------
 
     #[test]
     fn audio_source_zero_errors_with_one_based_message() {

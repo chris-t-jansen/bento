@@ -26,7 +26,7 @@
 //! - **Soft mux** of derived tracks into the output container with their
 //!   declared dispositions (lang, default, forced, etc.).
 //! - **Integration** into the convert command's per-file flow
-//!   ([`crate::cli::run_convert`]).
+//!   ([`crate::pipeline::run_convert`]).
 //!
 //! The canonical anime case from `DESIGN.md > [subtitles]` is "full dialogue
 //! track minus signs-only track = soft dialogue-only track plus burned signs."
@@ -542,17 +542,6 @@ pub fn serialize_ass(ass: &Ass) -> String {
     out
 }
 
-#[allow(dead_code)]
-fn format_ass_time(t: AssTime) -> String {
-    let total_ms = t.millis;
-    let cs = (total_ms % 1000) / 10;
-    let total_s = total_ms / 1000;
-    let s = total_s % 60;
-    let m = (total_s / 60) % 60;
-    let h = total_s / 3600;
-    format!("{}:{:02}:{:02}.{:02}", h, m, s, cs)
-}
-
 // =============================================================================
 // ASS — derivation: subtract_track
 // =============================================================================
@@ -960,6 +949,16 @@ Different end.
 
     fn at(h: u64, m: u64, s: u64, cs: u64) -> AssTime {
         AssTime::from_millis((h * 3600 + m * 60 + s) * 1000 + cs * 10)
+    }
+
+    fn format_ass_time(t: AssTime) -> String {
+        let total_ms = t.millis;
+        let cs = (total_ms % 1000) / 10;
+        let total_s = total_ms / 1000;
+        let s = total_s % 60;
+        let m = (total_s / 60) % 60;
+        let h = total_s / 3600;
+        format!("{}:{:02}:{:02}.{:02}", h, m, s, cs)
     }
 
     const SAMPLE_ASS: &str = "\

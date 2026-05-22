@@ -6,11 +6,16 @@
 
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::LazyLock;
 
 use regex::Regex;
 
 use crate::config::Config;
 use crate::error::{Error, Result};
+
+static TEMPLATE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\{([A-Za-z_][A-Za-z0-9_]*)(?::([^}]*))?\}").unwrap()
+});
 
 /// Compute the output filename stem and, if the naming regex contains a capture
 /// named `episode` or `ep`, the episode number for container metadata embedding.
@@ -105,12 +110,10 @@ fn int_value(v: &TemplateVar) -> Option<i64> {
 }
 
 fn expand_template(template: &str, vars: &HashMap<String, TemplateVar>) -> Result<String> {
-    // Matches {varname} and {varname:fmtspec}.
-    let re = Regex::new(r"\{([A-Za-z_][A-Za-z0-9_]*)(?::([^}]*))?\}").unwrap();
     let mut result = String::with_capacity(template.len() + 16);
     let mut last_end = 0;
 
-    for cap in re.captures_iter(template) {
+    for cap in TEMPLATE_RE.captures_iter(template) {
         let whole = cap.get(0).unwrap();
         result.push_str(&template[last_end..whole.start()]);
         last_end = whole.end();
