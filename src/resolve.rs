@@ -228,7 +228,7 @@ fn apply_section_cascade(config: &mut Config) {
 
 /// Construct the baked-in defaults Config. CRF is selected per the resolved
 /// encoder name (x264 → 20, x265 → 22, per DESIGN.md > [video] > encoder).
-fn baked_defaults(resolved_encoder_name: Option<EncoderName>) -> Config {
+pub(crate) fn baked_defaults(resolved_encoder_name: Option<EncoderName>) -> Config {
     let crf = match resolved_encoder_name.unwrap_or(EncoderName::X264) {
         EncoderName::X264 => 20,
         EncoderName::X265 => 22,

@@ -116,7 +116,7 @@ pub fn ensure_global_config(path: &Path, yes: bool, out: &mut dyn Write) -> Resu
     Ok(())
 }
 
-fn confirm_via_stdin(question: &str) -> Result<bool> {
+pub(crate) fn confirm_via_stdin(question: &str) -> Result<bool> {
     use std::io::{BufRead, Write as _};
     let mut stdout = std::io::stdout();
     let _ = write!(stdout, "{} [y/N] ", question);

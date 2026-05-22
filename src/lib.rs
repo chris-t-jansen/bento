@@ -1,5 +1,6 @@
 pub mod bootstrap;
 pub mod cli;
+pub mod repair;
 pub mod config;
 pub mod error;
 pub mod ffmpeg;

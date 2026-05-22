@@ -123,6 +123,17 @@ pub enum Error {
 
     #[error("--set: {reason}")]
     SetOverrideSchema { reason: String },
+
+    #[error(
+        "Could not automatically insert the missing fields — the resulting config \
+         is not valid TOML.\n\
+         This can happen when your config uses inline tables (e.g. \
+         `encoder = {{ ... }}`) where standard section headers are expected \
+         (e.g. `[video.encoder]`).\n\
+         Please add the following fields to {path} manually:\n{fields}",
+        fields = fields.iter().map(|f| format!("  {f}")).collect::<Vec<_>>().join("\n"),
+    )]
+    RepairResultInvalid { path: std::path::PathBuf, fields: Vec<String> },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

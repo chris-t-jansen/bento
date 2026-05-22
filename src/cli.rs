@@ -143,7 +143,11 @@ pub enum Command {
         yes: bool,
     },
     /// Repair the global config by inserting missing keys at their defaults.
-    Repair,
+    Repair {
+        /// Auto-confirm all prompts (non-interactive / scripted use).
+        #[arg(short = 'y', long = "yes")]
+        yes: bool,
+    },
 }
 
 pub fn run() -> Result<()> {
@@ -210,7 +214,7 @@ pub fn run() -> Result<()> {
                 },
             )
         }
-        Command::Repair => unimplemented!("repair (deferred)"),
+        Command::Repair { yes } => crate::repair::run_repair(yes, &mut stdout),
     }
 }
 
