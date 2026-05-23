@@ -1,3 +1,5 @@
+![Bento project banner](assets/logo/logo_banner.png)
+
 # Bento
 
 A configuration-driven CLI for converting and re-encoding video files. Designed primarily for anime, with escape hatches for other content.
@@ -111,7 +113,7 @@ Issues and pull requests are welcome. Please read [DESIGN.md](DESIGN.md) before 
 
 ## License
 
-Bento is dual-licensed under either of:
+Bento, except where otherwise noted, is dual-licensed under either of:
 
 - **Apache License, Version 2.0** ([LICENSE-APACHE](LICENSE-APACHE) or <https://www.apache.org/licenses/LICENSE-2.0>)
 - **MIT License** ([LICENSE-MIT](LICENSE-MIT) or <https://opensource.org/licenses/MIT>)
