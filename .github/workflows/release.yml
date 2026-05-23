@@ -13,7 +13,7 @@ jobs:
     name: Create GitHub release
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Create release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -42,7 +42,7 @@ jobs:
           - target: x86_64-pc-windows-msvc
             os: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Upload binary
         uses: taiki-e/upload-rust-binary-action@v1
         with:
@@ -57,7 +57,7 @@ jobs:
     needs: upload-assets
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Mark release as published
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
