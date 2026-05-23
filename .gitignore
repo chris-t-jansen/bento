@@ -27,3 +27,6 @@ rustc-ice-*.txt
 
 # Those ridiculous macOS Finder files...
 **/.DS_Store
+
+# Zola build output
+docs/public/

@@ -1,0 +1,35 @@
+base_url = "https://chris-t-jansen.github.io/bento"
+title = "Bento"
+description = "A configuration-driven CLI for converting and re-encoding video files for Jellyfin."
+theme = "goyo"
+compile_sass = false
+
+[extra]
+nav = [
+    { name = "Documentation", url = "/introduction", type = "url", icon = "book" },
+    { name = "GitHub", url = "https://github.com/chris-t-jansen/bento", type = "url" },
+]
+footer_html = "Bento is dual-licensed under <a href='https://github.com/chris-t-jansen/bento/blob/main/LICENSE-MIT'>MIT</a> and <a href='https://github.com/chris-t-jansen/bento/blob/main/LICENSE-APACHE'>Apache 2.0</a>. Documentation built with <a href='https://www.getzola.org'>Zola</a> and <a href='https://github.com/hahwul/goyo'>Goyo</a>."
+edit_url = "https://github.com/chris-t-jansen/bento/edit/main/docs/content"
+issue_url = "https://github.com/chris-t-jansen/bento/issues"
+enable_custom_css = true
+
+[extra.logo]
+text = "Bento"
+image_path = "images/logo.png"
+
+[extra.theme]
+default_theme_dark = "synthwave"
+default_theme_light = "retro"
+colorset = "light"
+
+[extra.sidebar]
+expand_depth = 2
+
+[translations]
+toc_title = "On This Page"
+edit_page = "Edit this page"
+copy = "Copy"
+copied = "Copied!"
+next = "Next"
+back_to = "Back to"

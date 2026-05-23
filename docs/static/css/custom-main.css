@@ -1,0 +1,34 @@
+/*
+ * Theme overrides for Bento docs.
+ *
+ * These rules target daisyUI's CSS custom properties scoped to each theme.
+ * Only list values you actually want to change — everything else inherits
+ * from the built-in synthwave / retro theme as normal.
+ *
+ * daisyUI colour values use OKLCH: oklch(<lightness%> <chroma> <hue>)
+ * A handy picker: https://oklch.com
+ *
+ * To find the property names for anything else you want to override, open
+ * DevTools, inspect an element, and look for --color-* or other CSS vars
+ * on the <html data-theme="..."> element.
+ */
+
+[data-theme="synthwave"] {
+    --color-primary: rgb(255 140 80);
+    --color-primary-content: oklch(39% 0.141 25.723);
+    --color-secondary: rgb(255 200 73);
+    --color-secondary-content: oklch(55% 0.135 66.442);
+    --color-accent: rgb(95 207 189);
+    --color-accent-content: oklch(43% 0.095 166.913);
+}
+
+[data-theme="retro"] {
+    --color-primary: rgb(255 140 80);
+    --color-primary-content: oklch(39% 0.141 25.723);
+    --color-secondary: rgb(255 200 73);
+    --color-secondary-content: oklch(55% 0.135 66.442);
+    --color-accent: rgb(95 207 189);
+    --color-accent-content: oklch(43% 0.095 166.913);
+    --color-neutral: oklch(37% 0.01 67.558);
+    --color-neutral-content: oklch(86% 0.005 56.366);
+}
