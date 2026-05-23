@@ -25,4 +25,5 @@ rustc-ice-*.txt
 
 .claude/
 
-**/.DS_STORE
+# Those ridiculous macOS Finder files...
+**/.DS_Store

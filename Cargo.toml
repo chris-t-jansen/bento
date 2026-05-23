@@ -1,7 +1,15 @@
 [package]
 name = "bento"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2024"
+authors = ["Christian Jansen <chris+bento@claypotfrog.com>"]
+description = "A configuration-driven CLI for converting and re-encoding video files built on top of FFmpeg."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/chris-t-jansen/bento"
+homepage = "https://github.com/chris-t-jansen/bento"
+readme = "README.md"
+keywords = ["ffmpeg", "video", "transcode", "cli", "anime"]
+categories = ["command-line-utilities", "multimedia::video"]
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
