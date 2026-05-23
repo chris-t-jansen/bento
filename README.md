@@ -109,7 +109,7 @@ Each output file is a small, self-contained, neatly-packaged box — video, audi
 
 ## Contributing
 
-Issues and pull requests are welcome. Please read [DESIGN.md](DESIGN.md) before proposing schema or CLI changes — the document captures the *why* behind decisions and is the source of truth for the intended shape of the tool. Note also the AI-generated disclaimer at the top of this README; expect AI-assisted review.
+Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the dev loop and PR expectations, and please read [DESIGN.md](DESIGN.md) before proposing schema or CLI changes — the document captures the *why* behind decisions and is the source of truth for the intended shape of the tool. Note also the AI-generated disclaimer at the top of this README; expect AI-assisted review.
 
 ## License
 
