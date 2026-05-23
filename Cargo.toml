@@ -20,7 +20,7 @@ collapsible_match = "allow"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
-console = "0.15"
+console = "0.16"
 directories = "5"
 indicatif = "0.17"
 regex = "1"
