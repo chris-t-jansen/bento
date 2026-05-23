@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use console::style;
 
 use crate::config::{
-    Config, Container, Crop, CropMode, DeinterlaceMode, DetelecineMode, Denoise, OnExisting,
+    Config, Container, Crop, CropMode, DeinterlaceMode, Denoise, DetelecineMode, OnExisting,
     SubtitleMux, SubtitleTrack, TrackRef,
 };
 use crate::error::{Error, Result};
@@ -201,6 +201,8 @@ pub fn run_convert(input: &Path, out: &mut dyn Write, opts: ConvertOptions) -> R
     run_result
 }
 
+// TODO: refactor — too many arguments. Tracked in ROADMAP.md.
+#[allow(clippy::too_many_arguments)]
 fn run_convert_directory(
     input_dir: &Path,
     output_dir_override: Option<&Path>,
@@ -276,6 +278,8 @@ fn run_convert_directory(
     Ok(())
 }
 
+// TODO: refactor — too many arguments. Tracked in ROADMAP.md.
+#[allow(clippy::too_many_arguments)]
 fn run_convert_file(
     input: &Path,
     file_idx: usize,
@@ -341,8 +345,8 @@ fn run_convert_file(
                 if default_paths.len() == 1 { "" } else { "s" },
             )
             .map_err(crate::io_render_err)?;
-            let cfg_val = toml::Value::try_from(&resolved.config)
-                .expect("Config is always serializable");
+            let cfg_val =
+                toml::Value::try_from(&resolved.config).expect("Config is always serializable");
             for path in &default_paths {
                 let val_str = get_toml_at_path(&cfg_val, path)
                     .map(|v| format!(" = {}", toml_value_display(v)))
@@ -426,7 +430,11 @@ fn run_convert_file(
         compute_output_path(input, &resolved.config, output_dir_override, dry_run)?;
 
     // on_existing is resolved through the full layer stack (CLI layer included).
-    let on_existing = resolved.config.output.on_existing.unwrap_or(OnExisting::Warn);
+    let on_existing = resolved
+        .config
+        .output
+        .on_existing
+        .unwrap_or(OnExisting::Warn);
 
     let output_name = output_path
         .file_name()
@@ -498,9 +506,7 @@ fn run_convert_file(
 
     // --- Cropdetect pre-pass (if needed) -------------------------------------
     let crop_params: Option<String> = match &resolved.config.video.crop {
-        Some(crate::config::Crop::Mode(crate::config::CropMode::Auto)) => {
-            probe_cropdetect(input)?
-        }
+        Some(crate::config::Crop::Mode(crate::config::CropMode::Auto)) => probe_cropdetect(input)?,
         _ => None,
     };
 
@@ -617,9 +623,7 @@ fn write_sidecar(cli_config: &Config, path: &Path) -> Result<()> {
 
     let value = toml::Value::try_from(cli_config).expect("Config is always serializable");
     let toml_str = match clean_empty_tables(value) {
-        Some(cleaned) => {
-            toml::to_string_pretty(&cleaned).expect("cleaned Value always serializes")
-        }
+        Some(cleaned) => toml::to_string_pretty(&cleaned).expect("cleaned Value always serializes"),
         None => String::new(),
     };
 
@@ -642,7 +646,11 @@ fn write_sidecar(cli_config: &Config, path: &Path) -> Result<()> {
         path: path.to_path_buf(),
         source: e,
     })?;
-    writeln!(file, "# Contains only the settings overridden via CLI flags.").map_err(|e| Error::Io {
+    writeln!(
+        file,
+        "# Contains only the settings overridden via CLI flags."
+    )
+    .map_err(|e| Error::Io {
         path: path.to_path_buf(),
         source: e,
     })?;
@@ -900,7 +908,11 @@ fn print_dry_run_plan(
                 }
             }
             if !extract.is_empty() {
-                let idx_str = extract.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(", ");
+                let idx_str = extract
+                    .iter()
+                    .map(|i| i.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
                 writeln!(
                     out,
                     "  Would extract subtitle track{} {} from source.",
@@ -921,8 +933,12 @@ fn print_dry_run_plan(
 
             if !soft_ext.is_empty() {
                 let n = soft_ext.len();
-                let any_ext = soft_ext.iter().any(|t| matches!(t.mux, Some(SubtitleMux::External)));
-                let any_soft = soft_ext.iter().any(|t| matches!(t.mux, Some(SubtitleMux::Soft)));
+                let any_ext = soft_ext
+                    .iter()
+                    .any(|t| matches!(t.mux, Some(SubtitleMux::External)));
+                let any_soft = soft_ext
+                    .iter()
+                    .any(|t| matches!(t.mux, Some(SubtitleMux::Soft)));
                 let kind = match (any_soft, any_ext) {
                     (true, true) => "soft/external subtitle",
                     (false, true) => "external subtitle",
@@ -1122,11 +1138,23 @@ fn print_dry_run_plan(
         let copy_n = actions.iter().filter(|a| **a == AudioAction::Copy).count();
         let trans_n = tracks.len() - copy_n;
         let heading = if trans_n == 0 {
-            format!("Would copy {} audio track{}:", tracks.len(), if tracks.len() == 1 { "" } else { "s" })
+            format!(
+                "Would copy {} audio track{}:",
+                tracks.len(),
+                if tracks.len() == 1 { "" } else { "s" }
+            )
         } else if copy_n == 0 {
-            format!("Would transcode {} audio track{}:", tracks.len(), if tracks.len() == 1 { "" } else { "s" })
+            format!(
+                "Would transcode {} audio track{}:",
+                tracks.len(),
+                if tracks.len() == 1 { "" } else { "s" }
+            )
         } else {
-            format!("Would process {} audio track{}:", tracks.len(), if tracks.len() == 1 { "" } else { "s" })
+            format!(
+                "Would process {} audio track{}:",
+                tracks.len(),
+                if tracks.len() == 1 { "" } else { "s" }
+            )
         };
         writeln!(out, "  {}", heading).map_err(crate::io_render_err)?;
 
@@ -1135,17 +1163,26 @@ fn print_dry_run_plan(
             match action {
                 AudioAction::Copy => {
                     let src_idx = t.source.unwrap_or(1).saturating_sub(1) as usize;
-                    let src_desc = probe.audio.get(src_idx).map(|s| {
-                        format!(" ({} {})", s.codec, channels_label(s.channels))
-                    }).unwrap_or_default();
+                    let src_desc = probe
+                        .audio
+                        .get(src_idx)
+                        .map(|s| format!(" ({} {})", s.codec, channels_label(s.channels)))
+                        .unwrap_or_default();
                     writeln!(out, "    {}: copy{}.", label, src_desc)
                         .map_err(crate::io_render_err)?;
                 }
-                AudioAction::Transcode { encoder, bitrate_kbps, channels } => {
+                AudioAction::Transcode {
+                    encoder,
+                    bitrate_kbps,
+                    channels,
+                } => {
                     writeln!(
                         out,
                         "    {}: transcode → {} {}k {}.",
-                        label, encoder, bitrate_kbps, channels_label(*channels),
+                        label,
+                        encoder,
+                        bitrate_kbps,
+                        channels_label(*channels),
                     )
                     .map_err(crate::io_render_err)?;
                 }
@@ -1164,8 +1201,13 @@ fn print_dry_run_plan(
     } else {
         ""
     };
-    writeln!(out, "  Would mux to: {}{}.", output_path.display(), exists_note)
-        .map_err(crate::io_render_err)?;
+    writeln!(
+        out,
+        "  Would mux to: {}{}.",
+        output_path.display(),
+        exists_note
+    )
+    .map_err(crate::io_render_err)?;
 
     // --- Verbose: show the ffmpeg command line --------------------------------
     // Subtitles are omitted (their temp-dir paths aren't known at dry-run time).
@@ -1235,7 +1277,11 @@ fn sub_derivation(t: &SubtitleTrack) -> String {
     use crate::config::FilterMode;
     let src = sub_ref_short(&t.source);
     if let Some(sub_ref) = &t.subtract_track {
-        return format!("{} minus {} timestamps", src, sub_ref_short(&Some(sub_ref.clone())));
+        return format!(
+            "{} minus {} timestamps",
+            src,
+            sub_ref_short(&Some(sub_ref.clone()))
+        );
     }
     if let Some(f) = &t.filter {
         let mode = match f.mode {
@@ -1297,7 +1343,13 @@ fn sanitize_basename(input: &Path) -> String {
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|| "file".to_string());
     stem.chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect()
 }
 
@@ -1364,8 +1416,7 @@ fn detect_redundancies(
     let mut redundancies = Vec::new();
     for i in 0..file_layers.len() {
         let (lower_layer, ref lower_leaves) = file_layers[i];
-        for j in (i + 1)..file_layers.len() {
-            let (higher_layer, ref higher_leaves) = file_layers[j];
+        for (higher_layer, higher_leaves) in &file_layers[(i + 1)..] {
             for (path, higher_val) in higher_leaves {
                 if let Some(lower_val) = lower_leaves.get(path) {
                     if higher_val == lower_val {
@@ -1403,11 +1454,9 @@ fn toml_value_display(v: &toml::Value) -> String {
         toml::Value::Integer(i) => i.to_string(),
         toml::Value::Float(f) => f.to_string(),
         toml::Value::Boolean(b) => b.to_string(),
-        toml::Value::Array(a) => format!(
-            "[{} item{}]",
-            a.len(),
-            if a.len() == 1 { "" } else { "s" }
-        ),
+        toml::Value::Array(a) => {
+            format!("[{} item{}]", a.len(), if a.len() == 1 { "" } else { "s" })
+        }
         toml::Value::Table(_) => "{…}".to_string(),
         toml::Value::Datetime(d) => d.to_string(),
     }
@@ -1475,7 +1524,10 @@ mod tests {
     #[test]
     fn detect_redundancies_finds_same_scalar_in_higher_layer() {
         let layers = vec![
-            (dir_layer("/show/bento.toml"), parse("[audio]\nbitrate = 192\n")),
+            (
+                dir_layer("/show/bento.toml"),
+                parse("[audio]\nbitrate = 192\n"),
+            ),
             (
                 per_file_layer("/show/ep01.mkv.bento.toml"),
                 parse("[audio]\nbitrate = 192\n"),
@@ -1492,7 +1544,10 @@ mod tests {
     #[test]
     fn detect_redundancies_ignores_different_values() {
         let layers = vec![
-            (dir_layer("/show/bento.toml"), parse("[audio]\nbitrate = 192\n")),
+            (
+                dir_layer("/show/bento.toml"),
+                parse("[audio]\nbitrate = 192\n"),
+            ),
             (
                 per_file_layer("/show/ep01.mkv.bento.toml"),
                 parse("[audio]\nbitrate = 128\n"),
@@ -1509,8 +1564,14 @@ mod tests {
     #[test]
     fn detect_redundancies_ignores_cli_layer() {
         let layers = vec![
-            (dir_layer("/show/bento.toml"), parse("[audio]\nbitrate = 192\n")),
-            (crate::resolve::Layer::Cli, parse("[audio]\nbitrate = 192\n")),
+            (
+                dir_layer("/show/bento.toml"),
+                parse("[audio]\nbitrate = 192\n"),
+            ),
+            (
+                crate::resolve::Layer::Cli,
+                parse("[audio]\nbitrate = 192\n"),
+            ),
         ];
         let r = detect_redundancies(&layers);
         assert!(
@@ -1538,8 +1599,7 @@ mod tests {
     #[test]
     fn detect_redundancies_does_not_flag_different_list() {
         let lower = "[audio]\ntracks = [{ source = 1, lang = \"jpn\", default = true }]\n";
-        let higher =
-            "[audio]\ntracks = [{ source = 2, lang = \"eng\", default = true }]\n";
+        let higher = "[audio]\ntracks = [{ source = 2, lang = \"eng\", default = true }]\n";
         let layers = vec![
             (dir_layer("/show/bento.toml"), parse(lower)),
             (per_file_layer("/show/ep01.mkv.bento.toml"), parse(higher)),

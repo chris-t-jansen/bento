@@ -57,9 +57,7 @@ impl<'de> Deserialize<'de> for TrackRef {
         impl<'de> Visitor<'de> for V {
             type Value = TrackRef;
             fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                f.write_str(
-                    "either an integer (input track index) or a string (file path)",
-                )
+                f.write_str("either an integer (input track index) or a string (file path)")
             }
             fn visit_i64<E: de::Error>(self, v: i64) -> Result<TrackRef, E> {
                 if v < 0 {
@@ -68,14 +66,14 @@ impl<'de> Deserialize<'de> for TrackRef {
                         v
                     )));
                 }
-                u32::try_from(v).map(TrackRef::Index).map_err(|_| {
-                    E::custom(format!("track index {} doesn't fit in a u32", v))
-                })
+                u32::try_from(v)
+                    .map(TrackRef::Index)
+                    .map_err(|_| E::custom(format!("track index {} doesn't fit in a u32", v)))
             }
             fn visit_u64<E: de::Error>(self, v: u64) -> Result<TrackRef, E> {
-                u32::try_from(v).map(TrackRef::Index).map_err(|_| {
-                    E::custom(format!("track index {} doesn't fit in a u32", v))
-                })
+                u32::try_from(v)
+                    .map(TrackRef::Index)
+                    .map_err(|_| E::custom(format!("track index {} doesn't fit in a u32", v)))
             }
             fn visit_str<E: de::Error>(self, v: &str) -> Result<TrackRef, E> {
                 Ok(TrackRef::Path(v.to_string()))
@@ -309,7 +307,11 @@ tracks = [{ source = true, format = "srt", mux = "soft" }]
         let err = Config::from_toml_str(toml_str).unwrap_err().to_string();
         assert!(err.contains("integer"), "got: {}", err);
         assert!(err.contains("string"), "got: {}", err);
-        assert!(!err.contains("data did not match any variant"), "got: {}", err);
+        assert!(
+            !err.contains("data did not match any variant"),
+            "got: {}",
+            err
+        );
     }
 
     #[test]

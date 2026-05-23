@@ -177,13 +177,15 @@ pub fn probe_cropdetect(input: &Path) -> Result<Option<String>> {
         .filter_map(|line| {
             let pos = line.rfind("crop=")?;
             let rest = &line[pos + 5..]; // skip "crop="
-            let end = rest
-                .find(|c: char| c.is_whitespace())
-                .unwrap_or(rest.len());
+            let end = rest.find(|c: char| c.is_whitespace()).unwrap_or(rest.len());
             let value = rest[..end].trim();
-            if value.is_empty() { None } else { Some(value.to_string()) }
+            if value.is_empty() {
+                None
+            } else {
+                Some(value.to_string())
+            }
         })
-        .last();
+        .next_back();
 
     Ok(crop)
 }
@@ -203,13 +205,15 @@ mod tests {
             .filter_map(|line| {
                 let pos = line.rfind("crop=")?;
                 let rest = &line[pos + 5..];
-                let end = rest
-                    .find(|c: char| c.is_whitespace())
-                    .unwrap_or(rest.len());
+                let end = rest.find(|c: char| c.is_whitespace()).unwrap_or(rest.len());
                 let value = rest[..end].trim();
-                if value.is_empty() { None } else { Some(value.to_string()) }
+                if value.is_empty() {
+                    None
+                } else {
+                    Some(value.to_string())
+                }
             })
-            .last();
+            .next_back();
 
         assert_eq!(crop, Some("1920:800:0:138".to_string()));
     }

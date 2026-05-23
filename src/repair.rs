@@ -166,9 +166,7 @@ fn walk(
 
         match maybe_uval {
             None => collect_leaves(dval, &path, result),
-            Some(uval) if matches!(dval, toml::Value::Table(_)) => {
-                walk(dval, uval, &path, result)
-            }
+            Some(uval) if matches!(dval, toml::Value::Table(_)) => walk(dval, uval, &path, result),
             Some(_) => {} // present scalar — not missing
         }
     }
@@ -197,10 +195,7 @@ fn collect_leaves(value: &toml::Value, path: &str, result: &mut Vec<(String, tom
 /// `video.encoder.crf` belongs to section `[video.encoder]`). For sections
 /// whose header already exists in the file, fields are appended at the end of
 /// that section. Sections entirely absent from the file are appended at the end.
-pub(crate) fn insert_missing(
-    text: &str,
-    missing: &[(String, toml::Value)],
-) -> Result<String> {
+pub(crate) fn insert_missing(text: &str, missing: &[(String, toml::Value)]) -> Result<String> {
     if missing.is_empty() {
         return Ok(text.to_string());
     }
@@ -321,10 +316,7 @@ fn template_snippets() -> BTreeMap<String, Vec<String>> {
             let key = trimmed[..eq].trim();
             // Only record simple bare-key assignments; skip inline tables and
             // keys containing dots or spaces.
-            if !key.contains('[')
-                && !key.contains('{')
-                && !key.contains(' ')
-                && !key.contains('.')
+            if !key.contains('[') && !key.contains('{') && !key.contains(' ') && !key.contains('.')
             {
                 let path = if current_section.is_empty() {
                     key.to_string()
@@ -469,20 +461,19 @@ mod tests {
         // have no baked-in defaults and must never appear as missing.
         let defaults = crate::resolve::baked_defaults(None);
         let dv = toml::Value::try_from(&defaults).unwrap();
-        let empty_user =
-            toml::Value::try_from(&crate::config::Config::default()).unwrap();
+        let empty_user = toml::Value::try_from(crate::config::Config::default()).unwrap();
 
         let missing = find_missing(&dv, &empty_user);
         let paths: Vec<&str> = missing.iter().map(|(p, _)| p.as_str()).collect();
 
         // Use exact-prefix checks to avoid false matches like
         // "subtitles.warn_burn_metadata" matching a plain "metadata" substring.
-        let has_output_metadata = paths.iter().any(|p| {
-            *p == "output.metadata" || p.starts_with("output.metadata.")
-        });
-        let has_output_naming = paths.iter().any(|p| {
-            *p == "output.naming" || p.starts_with("output.naming.")
-        });
+        let has_output_metadata = paths
+            .iter()
+            .any(|p| *p == "output.metadata" || p.starts_with("output.metadata."));
+        let has_output_naming = paths
+            .iter()
+            .any(|p| *p == "output.naming" || p.starts_with("output.naming."));
         let has_tracks = paths.iter().any(|p| {
             *p == "audio.tracks"
                 || p.starts_with("audio.tracks.")
@@ -490,8 +481,16 @@ mod tests {
                 || p.starts_with("subtitles.tracks.")
         });
 
-        assert!(!has_output_metadata, "output.metadata should not appear; got: {:?}", paths);
-        assert!(!has_output_naming, "output.naming should not appear; got: {:?}", paths);
+        assert!(
+            !has_output_metadata,
+            "output.metadata should not appear; got: {:?}",
+            paths
+        );
+        assert!(
+            !has_output_naming,
+            "output.naming should not appear; got: {:?}",
+            paths
+        );
         assert!(!has_tracks, "tracks should not appear; got: {:?}", paths);
     }
 
@@ -596,8 +595,8 @@ mod tests {
 
     impl TempDir {
         fn new(tag: &str) -> Self {
-            let path = std::env::temp_dir()
-                .join(format!("bento-repair-{}-{}", std::process::id(), tag));
+            let path =
+                std::env::temp_dir().join(format!("bento-repair-{}-{}", std::process::id(), tag));
             let _ = std::fs::remove_dir_all(&path);
             std::fs::create_dir_all(&path).unwrap();
             Self { path }
@@ -629,8 +628,10 @@ mod tests {
     #[test]
     fn noop_on_complete_config() {
         let dir = TempDir::new("noop");
-        let cfg =
-            dir.write("config.toml", crate::bootstrap::generate_global_config_text());
+        let cfg = dir.write(
+            "config.toml",
+            crate::bootstrap::generate_global_config_text(),
+        );
         let (out, r) = run(&cfg, false);
         r.unwrap();
         assert!(out.contains("up to date"), "got: {}", out);
@@ -646,7 +647,11 @@ mod tests {
 
         // Dry run (yes=false, non-TTY) → NotInteractive; confirm field listed.
         let (out, _) = run(&cfg, false);
-        assert!(out.contains("audio.normalize_mix"), "field listed; got: {}", out);
+        assert!(
+            out.contains("audio.normalize_mix"),
+            "field listed; got: {}",
+            out
+        );
 
         // Actual run (yes=true) → field inserted.
         let (out, r) = run(&cfg, true);

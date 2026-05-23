@@ -4,11 +4,19 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
 /// Oldest ffmpeg version Bento is known to work with.
-pub const MINIMUM: Version = Version { major: 4, minor: 4, patch: 0 };
+pub const MINIMUM: Version = Version {
+    major: 4,
+    minor: 4,
+    patch: 0,
+};
 
 /// The ffmpeg version Bento is regularly tested against. Detections with a
 /// higher major version trigger an informational warning.
-pub const TESTED: Version = Version { major: 6, minor: 1, patch: 0 };
+pub const TESTED: Version = Version {
+    major: 6,
+    minor: 1,
+    patch: 0,
+};
 
 // ---------------------------------------------------------------------------
 // Version type
@@ -40,7 +48,11 @@ impl Version {
         let major: u32 = parts.next()?.parse().ok()?;
         let minor: u32 = parts.next().and_then(|p| p.parse().ok()).unwrap_or(0);
         let patch: u32 = parts.next().and_then(|p| p.parse().ok()).unwrap_or(0);
-        Some(Version { major, minor, patch })
+        Some(Version {
+            major,
+            minor,
+            patch,
+        })
     }
 
     /// Classify this version against the pinned constants.
@@ -86,7 +98,11 @@ pub struct BinDetection {
 pub fn detect(name: &'static str) -> Option<BinDetection> {
     let version = query_version(name)?; // returns None only when binary is absent
     let path = find_path(name);
-    Some(BinDetection { name, path, version })
+    Some(BinDetection {
+        name,
+        path,
+        version,
+    })
 }
 
 /// Run `<name> -version` and parse the version token from the first output line.
@@ -102,8 +118,8 @@ fn query_version(name: &str) -> Option<Option<Version>> {
         .output();
 
     match result {
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
-        Err(_) => return Some(None),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(_) => Some(None),
         Ok(output) => {
             let stdout = String::from_utf8_lossy(&output.stdout);
             // First line: "ffmpeg version 6.1.1 Copyright ..."
@@ -134,7 +150,11 @@ mod tests {
     fn version_parse_plain() {
         assert_eq!(
             Version::parse("6.1.1"),
-            Some(Version { major: 6, minor: 1, patch: 1 })
+            Some(Version {
+                major: 6,
+                minor: 1,
+                patch: 1
+            })
         );
     }
 
@@ -143,7 +163,11 @@ mod tests {
         // e.g. "4.4.2-0ubuntu0.22.04.1"
         assert_eq!(
             Version::parse("4.4.2-0ubuntu0.22.04.1"),
-            Some(Version { major: 4, minor: 4, patch: 2 })
+            Some(Version {
+                major: 4,
+                minor: 4,
+                patch: 2
+            })
         );
     }
 
@@ -151,7 +175,11 @@ mod tests {
     fn version_parse_no_patch() {
         assert_eq!(
             Version::parse("6.1"),
-            Some(Version { major: 6, minor: 1, patch: 0 })
+            Some(Version {
+                major: 6,
+                minor: 1,
+                patch: 0
+            })
         );
     }
 
@@ -163,7 +191,11 @@ mod tests {
 
     #[test]
     fn version_band_below_minimum() {
-        let v = Version { major: 3, minor: 4, patch: 0 };
+        let v = Version {
+            major: 3,
+            minor: 4,
+            patch: 0,
+        };
         assert_eq!(v.band(), VersionBand::BelowMinimum);
     }
 
@@ -174,32 +206,68 @@ mod tests {
 
     #[test]
     fn version_band_same_major_as_tested() {
-        let v = Version { major: TESTED.major, minor: 99, patch: 0 };
+        let v = Version {
+            major: TESTED.major,
+            minor: 99,
+            patch: 0,
+        };
         assert_eq!(v.band(), VersionBand::Ok);
     }
 
     #[test]
     fn version_band_above_tested_major() {
-        let v = Version { major: TESTED.major + 1, minor: 0, patch: 0 };
+        let v = Version {
+            major: TESTED.major + 1,
+            minor: 0,
+            patch: 0,
+        };
         assert_eq!(v.band(), VersionBand::AboveTestedMajor);
     }
 
     #[test]
     fn version_display() {
-        let v = Version { major: 6, minor: 1, patch: 1 };
+        let v = Version {
+            major: 6,
+            minor: 1,
+            patch: 1,
+        };
         assert_eq!(v.to_string(), "6.1.1");
     }
 
     #[test]
     fn version_ordering() {
         assert!(
-            Version { major: 5, minor: 0, patch: 0 } > Version { major: 4, minor: 4, patch: 0 }
+            Version {
+                major: 5,
+                minor: 0,
+                patch: 0
+            } > Version {
+                major: 4,
+                minor: 4,
+                patch: 0
+            }
         );
         assert!(
-            Version { major: 4, minor: 5, patch: 0 } > Version { major: 4, minor: 4, patch: 0 }
+            Version {
+                major: 4,
+                minor: 5,
+                patch: 0
+            } > Version {
+                major: 4,
+                minor: 4,
+                patch: 0
+            }
         );
         assert!(
-            Version { major: 4, minor: 4, patch: 1 } > Version { major: 4, minor: 4, patch: 0 }
+            Version {
+                major: 4,
+                minor: 4,
+                patch: 1
+            } > Version {
+                major: 4,
+                minor: 4,
+                patch: 0
+            }
         );
     }
 }

@@ -66,7 +66,9 @@ fn parse_one(s: &str) -> Result<(String, toml::Value)> {
         || key == "subtitles.tracks"
         || key.starts_with("subtitles.tracks.")
     {
-        return Err(Error::SetOverrideListPath { key: key.to_string() });
+        return Err(Error::SetOverrideListPath {
+            key: key.to_string(),
+        });
     }
 
     // Parse value_str as a TOML value via the `sentinel = <value>` trick.
@@ -81,9 +83,7 @@ fn parse_one(s: &str) -> Result<(String, toml::Value)> {
     })?;
 
     let value = match table {
-        toml::Value::Table(mut t) => {
-            t.remove("sentinel").expect("sentinel key always present")
-        }
+        toml::Value::Table(mut t) => t.remove("sentinel").expect("sentinel key always present"),
         _ => unreachable!("toml::from_str on a key=value string always yields a Table"),
     };
 
@@ -184,11 +184,8 @@ mod tests {
 
     #[test]
     fn multiple_overrides_same_subtable() {
-        let cfg = build_set_config(&[
-            s("video.encoder.crf=18"),
-            s(r#"video.encoder.name="x265""#),
-        ])
-        .unwrap();
+        let cfg = build_set_config(&[s("video.encoder.crf=18"), s(r#"video.encoder.name="x265""#)])
+            .unwrap();
         let enc = cfg.video.encoder.unwrap();
         assert_eq!(enc.crf, Some(18));
         assert_eq!(enc.name, Some(EncoderName::X265));

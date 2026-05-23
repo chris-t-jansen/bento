@@ -13,9 +13,8 @@ use regex::Regex;
 use crate::config::Config;
 use crate::error::{Error, Result};
 
-static TEMPLATE_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\{([A-Za-z_][A-Za-z0-9_]*)(?::([^}]*))?\}").unwrap()
-});
+static TEMPLATE_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\{([A-Za-z_][A-Za-z0-9_]*)(?::([^}]*))?\}").unwrap());
 
 /// Compute the output filename stem and, if the naming regex contains a capture
 /// named `episode` or `ep`, the episode number for container metadata embedding.
@@ -39,7 +38,10 @@ pub fn compute_output_stem(input: &Path, config: &Config) -> Result<(String, Opt
     let mut vars: HashMap<String, TemplateVar> = HashMap::new();
 
     // Always-available built-in variables.
-    vars.insert("source_basename".into(), TemplateVar::Str(source_basename.clone()));
+    vars.insert(
+        "source_basename".into(),
+        TemplateVar::Str(source_basename.clone()),
+    );
     if let Some(dir_name) = input
         .parent()
         .and_then(|p| p.file_name())
@@ -106,7 +108,11 @@ enum TemplateVar {
 }
 
 fn int_value(v: &TemplateVar) -> Option<i64> {
-    if let TemplateVar::Int(n) = v { Some(*n) } else { None }
+    if let TemplateVar::Int(n) = v {
+        Some(*n)
+    } else {
+        None
+    }
 }
 
 fn expand_template(template: &str, vars: &HashMap<String, TemplateVar>) -> Result<String> {
@@ -123,7 +129,9 @@ fn expand_template(template: &str, vars: &HashMap<String, TemplateVar>) -> Resul
 
         let var = vars
             .get(var_name)
-            .ok_or_else(|| Error::NamingUndefinedVar { var: var_name.to_string() })?;
+            .ok_or_else(|| Error::NamingUndefinedVar {
+                var: var_name.to_string(),
+            })?;
         result.push_str(&render_var(var, var_name, fmt_spec)?);
     }
 
@@ -176,13 +184,14 @@ mod tests {
     use std::path::PathBuf;
 
     fn make_config(naming: Option<Naming>, meta: Option<Metadata>) -> Config {
-        let mut cfg = Config::default();
-        cfg.output = Output {
-            naming,
-            metadata: meta,
+        Config {
+            output: Output {
+                naming,
+                metadata: meta,
+                ..Default::default()
+            },
             ..Default::default()
-        };
-        cfg
+        }
     }
 
     // Helper: input path with just a filename (no real directory).
@@ -205,7 +214,11 @@ mod tests {
                 regex: None,
                 template: Some("{show} - ep{source_basename}".into()),
             }),
-            Some(Metadata { show: Some("Bebop".into()), season: None, year: None }),
+            Some(Metadata {
+                show: Some("Bebop".into()),
+                season: None,
+                year: None,
+            }),
         );
         let (stem, ep) = compute_output_stem(&inp("01.mkv"), &cfg).unwrap();
         assert_eq!(stem, "Bebop - ep01");
@@ -322,7 +335,11 @@ mod tests {
                 regex: None,
                 template: Some("{show:02}".into()),
             }),
-            Some(Metadata { show: Some("Bebop".into()), season: None, year: None }),
+            Some(Metadata {
+                show: Some("Bebop".into()),
+                season: None,
+                year: None,
+            }),
         );
         let err = compute_output_stem(&inp("file.mkv"), &cfg).unwrap_err();
         assert!(matches!(err, Error::NamingFormatOnString { .. }), "{err}");
@@ -349,7 +366,11 @@ mod tests {
                 regex: None,
                 template: Some("S{season:02}".into()),
             }),
-            Some(Metadata { show: None, season: Some(2), year: None }),
+            Some(Metadata {
+                show: None,
+                season: Some(2),
+                year: None,
+            }),
         );
         let (stem, _) = compute_output_stem(&inp("ep.mkv"), &cfg).unwrap();
         assert_eq!(stem, "S02");

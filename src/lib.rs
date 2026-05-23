@@ -1,6 +1,5 @@
 pub mod bootstrap;
 pub mod cli;
-pub mod repair;
 pub mod config;
 pub mod error;
 pub mod ffmpeg;
@@ -8,6 +7,7 @@ pub mod layers;
 pub mod pipeline;
 pub mod progress;
 pub mod render;
+pub mod repair;
 pub mod resolve;
 pub mod set_override;
 pub mod subtitles;

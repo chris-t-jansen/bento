@@ -87,7 +87,7 @@ Foundation pieces that are working end-to-end. Most have at least light test cov
 
 Anything explicitly deferred in DESIGN.md or surfaced as future work. Move items here from "Not started" if a session concludes they're out of scope for MVP.
 
-- *(empty — populate as items get explicitly deprioritized)*
+- **Refactor `pipeline::run_convert_directory` and `pipeline::run_convert_file` to reduce argument counts.** Both functions currently take 8 and 10 positional arguments respectively, exceeding clippy's `too_many_arguments` threshold. They are individually `#[allow]`-ed with TODO markers. Likely fix: bundle `cli_config`, `dry_run`, `verbosity`, `warn_flags`, `temp_root`, and the output writer into a single `ConvertContext`-style struct that both functions take by reference. Touches the `convert` command path; consider doing it alongside any other convert-pipeline refactor.
 
 ---
 

@@ -6,7 +6,9 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use crate::config::{OnExisting, SubtitleFilter, SubtitleFormat, SubtitleMux, Subtitles, SubtitleTrack, TrackRef};
+use crate::config::{
+    OnExisting, SubtitleFilter, SubtitleFormat, SubtitleMux, SubtitleTrack, Subtitles, TrackRef,
+};
 use crate::error::{Error, Result};
 use crate::pipeline::probe::SourceProbe;
 use crate::resolve::{Layer, Provenance};
@@ -164,14 +166,8 @@ pub fn prepare_subtitles(
                 (path, SourceFormat::Srt)
             }
             (SourceFormat::Ass, SubtitleFormat::Ass) => {
-                let path = derive_soft_ass(
-                    input,
-                    track,
-                    source,
-                    config_dir.as_deref(),
-                    tempdir,
-                    i,
-                )?;
+                let path =
+                    derive_soft_ass(input, track, source, config_dir.as_deref(), tempdir, i)?;
                 (path, SourceFormat::Ass)
             }
             (SourceFormat::Srt, SubtitleFormat::Ass) => {
@@ -243,7 +239,11 @@ pub fn prepare_burn_subtitle_file(
                     Some(c) if c == "ass" || c == "ssa" => SourceFormat::Ass,
                     _ => SourceFormat::Srt,
                 };
-                let ext = if src_fmt == SourceFormat::Ass { "ass" } else { "srt" };
+                let ext = if src_fmt == SourceFormat::Ass {
+                    "ass"
+                } else {
+                    "srt"
+                };
                 let extracted = tempdir.join(format!("track{}-burn-source.{}", track_idx, ext));
                 extract_subtitle_track(input, *idx, &extracted)?;
                 Ok(extracted)
@@ -286,7 +286,11 @@ pub fn resolve_subtitle_path(track_path: &str, config_dir: Option<&Path>) -> Pat
 
 // --- Private helpers ---------------------------------------------------------
 
-fn detect_source_format(_input: &Path, source: &TrackRef, probe: &SourceProbe) -> Result<SourceFormat> {
+fn detect_source_format(
+    _input: &Path,
+    source: &TrackRef,
+    probe: &SourceProbe,
+) -> Result<SourceFormat> {
     match source {
         TrackRef::Index(idx) => Ok(match probe.subtitle_codec(*idx) {
             Some(c) if c == "ass" || c == "ssa" => SourceFormat::Ass,
@@ -313,7 +317,10 @@ fn derive_srt_from_srt_source(
 
     if let Some(subtrahend_ref) = &track.subtract_track {
         let subtrahend = load_srt_source(input, subtrahend_ref, config_dir, tempdir, track_idx)?;
-        Ok(crate::subtitles::subtract_by_timestamp(&source_srt, &subtrahend))
+        Ok(crate::subtitles::subtract_by_timestamp(
+            &source_srt,
+            &subtrahend,
+        ))
     } else {
         Ok(source_srt)
     }
@@ -378,7 +385,10 @@ fn apply_ass_derivation(
         Ok(crate::subtitles::filter_ass(&source, f))
     } else if let Some(subtrahend_ref) = subtract_track {
         let subtrahend = load_ass_source(input, subtrahend_ref, config_dir, tempdir, track_idx)?;
-        Ok(crate::subtitles::subtract_ass_by_timestamp(&source, &subtrahend))
+        Ok(crate::subtitles::subtract_ass_by_timestamp(
+            &source,
+            &subtrahend,
+        ))
     } else {
         Ok(source)
     }
@@ -620,31 +630,52 @@ mod tests {
     fn design_doc_example_filename() {
         // lang="eng", title="English", default=true, format=srt →
         // "episode06.English.eng.default.srt"
-        let name = build_sidecar_filename("episode06", SourceFormat::Srt,
-            Some("English"), Some("eng"), true, false, false);
+        let name = build_sidecar_filename(
+            "episode06",
+            SourceFormat::Srt,
+            Some("English"),
+            Some("eng"),
+            true,
+            false,
+            false,
+        );
         assert_eq!(name, "episode06.English.eng.default.srt");
     }
 
     #[test]
     fn sidecar_all_flags() {
-        let name = build_sidecar_filename("ep01", SourceFormat::Ass,
-            Some("Signs"), Some("jpn"), false, true, true);
+        let name = build_sidecar_filename(
+            "ep01",
+            SourceFormat::Ass,
+            Some("Signs"),
+            Some("jpn"),
+            false,
+            true,
+            true,
+        );
         assert_eq!(name, "ep01.Signs.jpn.forced.sdh.ass");
     }
 
     #[test]
     fn sidecar_no_optional_fields() {
         // No title, no lang, no flags — minimal sidecar name.
-        let name = build_sidecar_filename("ep01", SourceFormat::Srt,
-            None, None, false, false, false);
+        let name =
+            build_sidecar_filename("ep01", SourceFormat::Srt, None, None, false, false, false);
         assert_eq!(name, "ep01.srt");
     }
 
     #[test]
     fn sidecar_sdh_not_hi_or_cc() {
         // DESIGN.md mandates "sdh" (not "hi" or "cc") to avoid hi-as-Hindi ambiguity.
-        let name = build_sidecar_filename("ep01", SourceFormat::Srt,
-            None, Some("eng"), false, false, true);
+        let name = build_sidecar_filename(
+            "ep01",
+            SourceFormat::Srt,
+            None,
+            Some("eng"),
+            false,
+            false,
+            true,
+        );
         assert_eq!(name, "ep01.eng.sdh.srt");
         assert!(!name.contains(".hi.") && !name.contains(".cc."));
     }
@@ -652,8 +683,7 @@ mod tests {
     #[test]
     fn sidecar_flag_order_default_forced_sdh() {
         // Flags must appear in declaration order: default, forced, sdh.
-        let name = build_sidecar_filename("ep", SourceFormat::Srt,
-            None, None, true, true, true);
+        let name = build_sidecar_filename("ep", SourceFormat::Srt, None, None, true, true, true);
         assert_eq!(name, "ep.default.forced.sdh.srt");
     }
 
@@ -722,7 +752,11 @@ mod tests {
         // File should be untouched; log should contain a warning.
         assert_eq!(std::fs::read_to_string(&sidecar).unwrap(), "old content");
         let log_str = String::from_utf8(log.into_inner()).unwrap();
-        assert!(log_str.contains("warning"), "expected a warning in log: {}", log_str);
+        assert!(
+            log_str.contains("warning"),
+            "expected a warning in log: {}",
+            log_str
+        );
     }
 
     #[test]
@@ -785,7 +819,10 @@ mod tests {
         let output_path = out_dir.path().join("ep.mp4");
         let mut log = Cursor::new(Vec::<u8>::new());
         let result = write_external_sidecars(&prepared, &output_path, OnExisting::Fail, &mut log);
-        assert!(matches!(result, Err(crate::error::Error::OutputExists { .. })));
+        assert!(matches!(
+            result,
+            Err(crate::error::Error::OutputExists { .. })
+        ));
     }
 
     #[test]

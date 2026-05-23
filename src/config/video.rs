@@ -3,9 +3,9 @@
 use std::fmt;
 
 use serde::de::value::{MapAccessDeserializer, StrDeserializer};
-use std::fmt::Display;
 use serde::de::{self, MapAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
+use std::fmt::Display;
 
 #[derive(Debug, Default, Clone, Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields, rename_all = "snake_case")]
@@ -330,7 +330,10 @@ never_upscale = true
         assert_eq!(v.deinterlace, Some(DeinterlaceMode::None));
         assert_eq!(v.detelecine, Some(DetelecineMode::None));
         assert_eq!(v.denoise, Some(Denoise::Off(DenoiseOff::None)));
-        assert_eq!(v.resolution, Some(Resolution::Mode(ResolutionMode::Original)));
+        assert_eq!(
+            v.resolution,
+            Some(Resolution::Mode(ResolutionMode::Original))
+        );
         assert_eq!(v.never_upscale, Some(true));
     }
 
@@ -436,7 +439,11 @@ crop = { tup = 60, bottom = 60 }
         assert!(err.contains("unknown field `tup`"), "got: {}", err);
         assert!(err.contains("`top`"), "got: {}", err);
         assert!(err.contains("`bottom`"), "got: {}", err);
-        assert!(!err.contains("data did not match any variant"), "got: {}", err);
+        assert!(
+            !err.contains("data did not match any variant"),
+            "got: {}",
+            err
+        );
     }
 
     #[test]

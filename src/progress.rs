@@ -18,11 +18,17 @@ pub struct ProgressUpdate {
 pub fn parse_progress_line(line: &str) -> Option<ProgressUpdate> {
     if let Some(val) = line.strip_prefix("out_time_us=") {
         let us = val.trim().parse::<i64>().unwrap_or(0).max(0) as u64;
-        return Some(ProgressUpdate { out_time_us: Some(us), is_end: false });
+        return Some(ProgressUpdate {
+            out_time_us: Some(us),
+            is_end: false,
+        });
     }
     if line.trim_start().starts_with("progress=") {
         let is_end = line.contains("progress=end");
-        return Some(ProgressUpdate { out_time_us: None, is_end });
+        return Some(ProgressUpdate {
+            out_time_us: None,
+            is_end,
+        });
     }
     None
 }
@@ -102,7 +108,13 @@ impl FileProgress {
             }
         };
 
-        Self { inner, verbosity, label, counter, start }
+        Self {
+            inner,
+            verbosity,
+            label,
+            counter,
+            start,
+        }
     }
 
     /// Advance the progress bar position from an ffmpeg `out_time_us` value.

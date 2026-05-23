@@ -91,7 +91,10 @@ naming = {
             naming.regex.as_deref(),
             Some(r"S(?P<s>\d+)E(?P<episode>\d+)")
         );
-        assert_eq!(naming.template.as_deref(), Some("{show} - S{s:02}E{episode:02}"));
+        assert_eq!(
+            naming.template.as_deref(),
+            Some("{show} - S{s:02}E{episode:02}")
+        );
     }
 
     #[test]

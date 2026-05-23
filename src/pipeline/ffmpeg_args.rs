@@ -41,8 +41,14 @@ pub fn decide_audio_action(
         .or(section.encoder.as_deref())
         .unwrap_or("aac");
     let target_bitrate = track.bitrate.or(section.bitrate).unwrap_or(192);
-    let force_bitrate = track.force_bitrate.or(section.force_bitrate).unwrap_or(false);
-    let force_mixdown = track.force_mixdown.or(section.force_mixdown).unwrap_or(false);
+    let force_bitrate = track
+        .force_bitrate
+        .or(section.force_bitrate)
+        .unwrap_or(false);
+    let force_mixdown = track
+        .force_mixdown
+        .or(section.force_mixdown)
+        .unwrap_or(false);
     let mixdown = track.mixdown.or(section.mixdown).unwrap_or(Mixdown::Stereo);
     let target_channels = mixdown_to_channels(mixdown);
 
@@ -131,10 +137,7 @@ pub fn build_ffmpeg_args(
 
     // --- Video codec ----------------------------------------------------------
     if let Some(encoder) = &config.video.encoder {
-        let codec_name = encoder
-            .name
-            .map(|n| n.as_ffmpeg())
-            .unwrap_or("libx264");
+        let codec_name = encoder.name.map(|n| n.as_ffmpeg()).unwrap_or("libx264");
         args.push("-c:v".into());
         args.push(codec_name.into());
 
@@ -547,7 +550,10 @@ mod tests {
             ..Default::default()
         };
         let src = aac_stream(Some(192), 2);
-        let src_ac3 = AudioStreamInfo { codec: "ac3".to_string(), ..src };
+        let src_ac3 = AudioStreamInfo {
+            codec: "ac3".to_string(),
+            ..src
+        };
         assert!(matches!(
             decide_audio_action(&track, &section, &src_ac3, false),
             AudioAction::Transcode { .. }
@@ -607,15 +613,17 @@ mod tests {
     fn escape_filtergraph_path_escapes_colons_and_backslashes() {
         use std::path::PathBuf;
         let path = PathBuf::from("/tmp/bento/track0-burn.ass");
-        assert_eq!(
-            escape_filtergraph_path(&path),
-            "/tmp/bento/track0-burn.ass"
-        );
+        assert_eq!(escape_filtergraph_path(&path), "/tmp/bento/track0-burn.ass");
 
         // Windows-style path with backslash and colon
         let win_path = PathBuf::from("C:\\Users\\foo\\track.ass");
         let escaped = escape_filtergraph_path(&win_path);
-        assert!(escaped.contains("\\\\") || escaped.contains("\\:") || !escaped.contains(':') || cfg!(windows));
+        assert!(
+            escaped.contains("\\\\")
+                || escaped.contains("\\:")
+                || !escaped.contains(':')
+                || cfg!(windows)
+        );
     }
 
     #[test]
@@ -634,17 +642,22 @@ mod tests {
     fn build_video_filters_chains_denoise_and_deinterlace() {
         use crate::config::{DenoiseConfig, DenoiseFilter, DenoisePreset, Video};
         use crate::pipeline::probe::{SourceProbe, VideoStreamInfo};
-        let mut config = crate::config::Config::default();
-        config.video = Video {
-            deinterlace: Some(DeinterlaceMode::Yadif),
-            denoise: Some(Denoise::Active(DenoiseConfig {
-                filter: Some(DenoiseFilter::Hqdn3d),
-                preset: Some(DenoisePreset::Medium),
-            })),
+        let config = crate::config::Config {
+            video: Video {
+                deinterlace: Some(DeinterlaceMode::Yadif),
+                denoise: Some(Denoise::Active(DenoiseConfig {
+                    filter: Some(DenoiseFilter::Hqdn3d),
+                    preset: Some(DenoisePreset::Medium),
+                })),
+                ..Default::default()
+            },
             ..Default::default()
         };
         let probe = SourceProbe {
-            video: VideoStreamInfo { width: 1920, height: 1080 },
+            video: VideoStreamInfo {
+                width: 1920,
+                height: 1080,
+            },
             audio: Vec::new(),
             subtitles: Vec::new(),
             duration_secs: None,

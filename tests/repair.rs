@@ -57,7 +57,10 @@ fn run(path: &std::path::Path, yes: bool) -> (String, bento::error::Result<()>) 
 #[test]
 fn noop_on_complete_config() {
     let dir = TestDir::new("noop");
-    let cfg = dir.write("config.toml", bento::bootstrap::generate_global_config_text());
+    let cfg = dir.write(
+        "config.toml",
+        bento::bootstrap::generate_global_config_text(),
+    );
     let (out, r) = run(&cfg, false);
     r.unwrap();
     assert!(out.contains("up to date"), "got: {}", out);
@@ -66,8 +69,8 @@ fn noop_on_complete_config() {
 #[test]
 fn reports_missing_field() {
     let dir = TestDir::new("reports");
-    let modified = bento::bootstrap::generate_global_config_text()
-        .replace("normalize_mix = true\n", "");
+    let modified =
+        bento::bootstrap::generate_global_config_text().replace("normalize_mix = true\n", "");
     let cfg = dir.write("config.toml", &modified);
 
     // yes=false in a non-TTY context → NotInteractive (confirm never reached
@@ -83,8 +86,8 @@ fn reports_missing_field() {
 #[test]
 fn inserts_missing_field_with_yes() {
     let dir = TestDir::new("inserts");
-    let modified = bento::bootstrap::generate_global_config_text()
-        .replace("normalize_mix = true\n", "");
+    let modified =
+        bento::bootstrap::generate_global_config_text().replace("normalize_mix = true\n", "");
     dir.write("config.toml", &modified);
     let cfg = dir.path.join("config.toml");
 
@@ -136,16 +139,22 @@ fn multiple_missing_fields_all_inserted() {
     assert!(out.contains("field(s) added"));
 
     let repaired = dir.read("config.toml");
-    assert!(repaired.contains("normalize_mix = true"), "normalize_mix inserted");
-    assert!(repaired.contains("preserve_chapters = true"), "preserve_chapters inserted");
+    assert!(
+        repaired.contains("normalize_mix = true"),
+        "normalize_mix inserted"
+    );
+    assert!(
+        repaired.contains("preserve_chapters = true"),
+        "preserve_chapters inserted"
+    );
     bento::config::Config::from_toml_str(&repaired).expect("repaired config parses");
 }
 
 #[test]
 fn inserted_fields_carry_repair_marker_comment() {
     let dir = TestDir::new("comments");
-    let modified = bento::bootstrap::generate_global_config_text()
-        .replace("normalize_mix = true\n", "");
+    let modified =
+        bento::bootstrap::generate_global_config_text().replace("normalize_mix = true\n", "");
     dir.write("config.toml", &modified);
     let cfg = dir.path.join("config.toml");
 

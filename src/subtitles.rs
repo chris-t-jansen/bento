@@ -90,11 +90,7 @@ pub fn parse_srt(input: &str) -> Result<Srt, SrtParseError> {
     let input = input.strip_prefix('\u{FEFF}').unwrap_or(input);
 
     // Pre-collect lines with 1-based numbers so error messages are useful.
-    let lines: Vec<(usize, &str)> = input
-        .lines()
-        .enumerate()
-        .map(|(i, l)| (i + 1, l))
-        .collect();
+    let lines: Vec<(usize, &str)> = input.lines().enumerate().map(|(i, l)| (i + 1, l)).collect();
 
     let mut events = Vec::new();
     let mut i = 0;
@@ -163,7 +159,7 @@ fn parse_timestamp_line(line: &str) -> Option<(SrtTime, SrtTime)> {
 
 fn parse_srt_time(s: &str) -> Option<SrtTime> {
     let s = s.trim();
-    let (hms, ms_str) = match s.rfind(|c| c == ',' || c == '.') {
+    let (hms, ms_str) = match s.rfind([',', '.']) {
         Some(idx) => (&s[..idx], &s[idx + 1..]),
         None => return None,
     };
@@ -231,11 +227,8 @@ fn format_srt_time(t: SrtTime) -> String {
 /// "full minus signs = dialogue-only" case where the signs track is a literal
 /// subset of the full track with identical timing.
 pub fn subtract_by_timestamp(base: &Srt, subtrahend: &Srt) -> Srt {
-    let drop_pairs: HashSet<(SrtTime, SrtTime)> = subtrahend
-        .events
-        .iter()
-        .map(|e| (e.start, e.end))
-        .collect();
+    let drop_pairs: HashSet<(SrtTime, SrtTime)> =
+        subtrahend.events.iter().map(|e| (e.start, e.end)).collect();
 
     Srt {
         events: base
@@ -442,8 +435,12 @@ impl StyleColumns {
         let cols: Vec<&str> = format_rest.split(',').map(|s| s.trim()).collect();
         Some(Self {
             name: cols.iter().position(|c| c.eq_ignore_ascii_case("Name"))?,
-            fontname: cols.iter().position(|c| c.eq_ignore_ascii_case("Fontname"))?,
-            fontsize: cols.iter().position(|c| c.eq_ignore_ascii_case("Fontsize"))?,
+            fontname: cols
+                .iter()
+                .position(|c| c.eq_ignore_ascii_case("Fontname"))?,
+            fontsize: cols
+                .iter()
+                .position(|c| c.eq_ignore_ascii_case("Fontsize"))?,
         })
     }
 }
@@ -549,11 +546,8 @@ pub fn serialize_ass(ass: &Ass) -> String {
 /// Drop events from `base` whose `(start, end)` timestamp pair exactly
 /// matches an event in `subtrahend`. ASS analogue of [`subtract_by_timestamp`].
 pub fn subtract_ass_by_timestamp(base: &Ass, subtrahend: &Ass) -> Ass {
-    let drop_pairs: HashSet<(AssTime, AssTime)> = subtrahend
-        .events
-        .iter()
-        .map(|e| (e.start, e.end))
-        .collect();
+    let drop_pairs: HashSet<(AssTime, AssTime)> =
+        subtrahend.events.iter().map(|e| (e.start, e.end)).collect();
 
     Ass {
         header: base.header.clone(),
@@ -699,7 +693,9 @@ fn ass_text_to_plain(text: &str) -> String {
     // \N — hard line break
     // \n — soft line break (typically rendered as space)
     // \h — non-breaking space
-    out.replace("\\N", "\n").replace("\\n", " ").replace("\\h", " ")
+    out.replace("\\N", "\n")
+        .replace("\\n", " ")
+        .replace("\\h", " ")
 }
 
 // =============================================================================
@@ -718,13 +714,19 @@ mod tests {
 
     #[test]
     fn parses_canonical_timestamp() {
-        assert_eq!(parse_srt_time("00:00:01,234"), Some(SrtTime::from_millis(1234)));
+        assert_eq!(
+            parse_srt_time("00:00:01,234"),
+            Some(SrtTime::from_millis(1234))
+        );
         assert_eq!(parse_srt_time("01:02:03,456"), Some(t(1, 2, 3, 456)));
     }
 
     #[test]
     fn accepts_dot_as_fractional_separator() {
-        assert_eq!(parse_srt_time("00:00:01.500"), Some(SrtTime::from_millis(1500)));
+        assert_eq!(
+            parse_srt_time("00:00:01.500"),
+            Some(SrtTime::from_millis(1500))
+        );
     }
 
     #[test]
@@ -783,7 +785,10 @@ Third subtitle.
     fn parses_multiple_events_with_multi_line_text() {
         let srt = parse_srt(SAMPLE_THREE_EVENTS).unwrap();
         assert_eq!(srt.events.len(), 3);
-        assert_eq!(srt.events[0].text, "First subtitle.\nThis continues on a second line.");
+        assert_eq!(
+            srt.events[0].text,
+            "First subtitle.\nThis continues on a second line."
+        );
         assert_eq!(srt.events[1].text, "Second subtitle.");
         assert_eq!(srt.events[2].text, "Third subtitle.");
     }
@@ -802,7 +807,10 @@ Third subtitle.
         let srt = parse_srt(&crlf).unwrap();
         assert_eq!(srt.events.len(), 3);
         // Multi-line text should not contain stray \r characters.
-        assert_eq!(srt.events[0].text, "First subtitle.\nThis continues on a second line.");
+        assert_eq!(
+            srt.events[0].text,
+            "First subtitle.\nThis continues on a second line."
+        );
     }
 
     #[test]
@@ -874,7 +882,8 @@ B
     fn subtract_canonical_full_minus_signs() {
         // Full = dialogue + signs. Signs = a subset with identical timing.
         // Result = dialogue only.
-        let full = parse_srt("\
+        let full = parse_srt(
+            "\
 1
 00:00:01,000 --> 00:00:04,000
 Dialogue line 1.
@@ -894,9 +903,12 @@ Dialogue line 2.
 5
 00:00:16,000 --> 00:00:19,000
 Dialogue line 3.
-").unwrap();
+",
+        )
+        .unwrap();
 
-        let signs = parse_srt("\
+        let signs = parse_srt(
+            "\
 1
 00:00:05,000 --> 00:00:06,000
 [ Sign: Konbini ]
@@ -904,7 +916,9 @@ Dialogue line 3.
 2
 00:00:12,500 --> 00:00:14,000
 [ Sign: Departures ]
-").unwrap();
+",
+        )
+        .unwrap();
 
         let dialogue = subtract_by_timestamp(&full, &signs);
         assert_eq!(dialogue.events.len(), 3);
@@ -915,16 +929,22 @@ Dialogue line 3.
     fn subtract_partial_overlap_does_not_match() {
         // (start=1000, end=4000) vs (start=1000, end=4500) — different end →
         // not a match. Per the design's strict timestamp-pair rule.
-        let base = parse_srt("\
+        let base = parse_srt(
+            "\
 1
 00:00:01,000 --> 00:00:04,000
 Keep me.
-").unwrap();
-        let subtrahend = parse_srt("\
+",
+        )
+        .unwrap();
+        let subtrahend = parse_srt(
+            "\
 1
 00:00:01,000 --> 00:00:04,500
 Different end.
-").unwrap();
+",
+        )
+        .unwrap();
         let result = subtract_by_timestamp(&base, &subtrahend);
         assert_eq!(result.events.len(), 1);
     }
@@ -985,7 +1005,10 @@ Comment: 0,0:00:12.00,0:00:13.00,Main,,0,0,0,,This is a comment
 
     #[test]
     fn parses_ass_time_centiseconds() {
-        assert_eq!(parse_ass_time("0:00:01.50"), Some(AssTime::from_millis(1500)));
+        assert_eq!(
+            parse_ass_time("0:00:01.50"),
+            Some(AssTime::from_millis(1500))
+        );
         assert_eq!(parse_ass_time("1:23:45.67"), Some(at(1, 23, 45, 67)));
         assert_eq!(parse_ass_time("0:00:00.00"), Some(AssTime::from_millis(0)));
     }
@@ -1052,7 +1075,11 @@ Comment: 0,0:00:12.00,0:00:13.00,Main,,0,0,0,,This is a comment
     fn rejects_truncated_ass_event() {
         let bad = "[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\nDialogue: 0,0:00:01.00,0:00:02.00,Main\n";
         let err = parse_ass(bad).unwrap_err();
-        assert!(err.message.contains("comma-separated fields"), "got: {}", err.message);
+        assert!(
+            err.message.contains("comma-separated fields"),
+            "got: {}",
+            err.message
+        );
     }
 
     // --- ASS round-trip -----------------------------------------------------
@@ -1089,7 +1116,11 @@ Comment: 0,0:00:12.00,0:00:13.00,Main,,0,0,0,,This is a comment
             style: Some(name.to_string()),
             font: None,
             size: None,
-            mode: Some(if retain { FilterMode::Retain } else { FilterMode::Remove }),
+            mode: Some(if retain {
+                FilterMode::Retain
+            } else {
+                FilterMode::Remove
+            }),
         }
     }
 

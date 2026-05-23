@@ -11,6 +11,13 @@ readme = "README.md"
 keywords = ["ffmpeg", "video", "transcode", "cli", "anime"]
 categories = ["command-line-utilities", "multimedia::video"]
 
+[lints.clippy]
+# Clippy nags about combining `if A { if B { ... } }` into `if A && B { ... }`,
+# including across `if let` patterns with `let`-chains. The rewrite often hurts
+# readability when conditions are long, so we opt out project-wide.
+collapsible_if = "allow"
+collapsible_match = "allow"
+
 [dependencies]
 clap = { version = "4", features = ["derive"] }
 console = "0.15"

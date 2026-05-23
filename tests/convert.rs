@@ -24,11 +24,7 @@ struct TestDir {
 
 impl TestDir {
     fn new(name: &str) -> Self {
-        let path = std::env::temp_dir().join(format!(
-            "bento-test-{}-{}",
-            std::process::id(),
-            name
-        ));
+        let path = std::env::temp_dir().join(format!("bento-test-{}-{}", std::process::id(), name));
         let _ = std::fs::remove_dir_all(&path);
         std::fs::create_dir_all(&path).unwrap();
         Self { path }
@@ -193,7 +189,11 @@ tracks = [{ source = 1, format = "ass", mux = "soft" }]
     );
     let mut out = buf();
     let result = run_config(&video, &mut out);
-    assert!(result.is_ok(), "ASS soft in MKV should be valid: {:?}", result);
+    assert!(
+        result.is_ok(),
+        "ASS soft in MKV should be valid: {:?}",
+        result
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -274,7 +274,11 @@ tracks = [{ source = 1 }]
     );
     let mut out = buf();
     let result = run_convert(&video, &mut out, ConvertOptions::default());
-    assert!(result.is_ok(), "skip_silently should return Ok: {:?}", result);
+    assert!(
+        result.is_ok(),
+        "skip_silently should return Ok: {:?}",
+        result
+    );
 }
 
 #[test]
@@ -295,7 +299,11 @@ tracks = [{ source = 1 }]
     );
     let mut out = buf();
     let result = run_convert(&video, &mut out, ConvertOptions::default());
-    assert!(result.is_ok(), "warn mode should skip and return Ok: {:?}", result);
+    assert!(
+        result.is_ok(),
+        "warn mode should skip and return Ok: {:?}",
+        result
+    );
     let text = String::from_utf8(out).unwrap();
     assert!(
         text.contains("warning: output exists"),
@@ -327,12 +335,14 @@ tracks = [{ source = 1, lang = "jpn", title = "Japanese", default = true }]
     let result = run_convert(
         &video,
         &mut out,
-        ConvertOptions { dry_run: true, ..Default::default() },
+        ConvertOptions {
+            dry_run: true,
+            ..Default::default()
+        },
     );
     let text = String::from_utf8(out).unwrap();
-    match result {
-        Err(Error::FfmpegNotFound) => return,
-        _ => {}
+    if let Err(Error::FfmpegNotFound) = result {
+        return;
     }
     assert!(
         text.contains("Dry-run for"),
@@ -361,10 +371,17 @@ container = "mkv"
     let result = run_convert(
         &video,
         &mut out,
-        ConvertOptions { dry_run: true, ..Default::default() },
+        ConvertOptions {
+            dry_run: true,
+            ..Default::default()
+        },
     );
     let text = String::from_utf8(out).unwrap();
-    assert!(result.is_err(), "config error should propagate: {:?}", result);
+    assert!(
+        result.is_err(),
+        "config error should propagate: {:?}",
+        result
+    );
     assert!(
         text.contains("would be processed"),
         "dry-run summary missing 'would be processed':\n{}",
@@ -393,17 +410,22 @@ tracks = [{ source = 1, lang = "jpn", default = true }]
 "#,
     );
     let encoded_dir = dir.path.join("encoded");
-    assert!(!encoded_dir.exists(), "encoded/ should not exist before run");
+    assert!(
+        !encoded_dir.exists(),
+        "encoded/ should not exist before run"
+    );
 
     let mut out = buf();
     let result = run_convert(
         &video,
         &mut out,
-        ConvertOptions { dry_run: true, ..Default::default() },
+        ConvertOptions {
+            dry_run: true,
+            ..Default::default()
+        },
     );
-    match result {
-        Err(Error::FfmpegNotFound) => return,
-        _ => {}
+    if let Err(Error::FfmpegNotFound) = result {
+        return;
     }
 
     assert!(
@@ -421,7 +443,11 @@ fn dry_run_summary_footer_suppressed_in_quiet_mode() {
     let _ = run_convert(
         &video,
         &mut out,
-        ConvertOptions { dry_run: true, verbosity: Verbosity::Quiet, ..Default::default() },
+        ConvertOptions {
+            dry_run: true,
+            verbosity: Verbosity::Quiet,
+            ..Default::default()
+        },
     );
     let text = String::from_utf8(out).unwrap();
     assert!(
@@ -440,7 +466,10 @@ fn dry_run_summary_footer_shown_in_default_mode() {
     let _ = run_convert(
         &video,
         &mut out,
-        ConvertOptions { dry_run: true, ..Default::default() },
+        ConvertOptions {
+            dry_run: true,
+            ..Default::default()
+        },
     );
     let text = String::from_utf8(out).unwrap();
     assert!(
@@ -481,20 +510,47 @@ tracks = [
     let result = run_convert(
         &video,
         &mut out,
-        ConvertOptions { dry_run: true, ..Default::default() },
+        ConvertOptions {
+            dry_run: true,
+            ..Default::default()
+        },
     );
     let text = String::from_utf8(out).unwrap();
     match result {
         Err(Error::FfmpegNotFound) | Err(Error::FfprobeFailed { .. }) => return,
         _ => {}
     }
-    assert!(text.contains("Would extract subtitle track"), "missing subtitle extraction line:\n{}", text);
-    assert!(text.contains("Would derive"), "missing subtitle derivation line:\n{}", text);
-    assert!(text.contains("Would burn"), "missing burn subtitle line:\n{}", text);
-    assert!(text.contains("Would transcode video: x264 crf=20"), "missing video plan:\n{}", text);
+    assert!(
+        text.contains("Would extract subtitle track"),
+        "missing subtitle extraction line:\n{}",
+        text
+    );
+    assert!(
+        text.contains("Would derive"),
+        "missing subtitle derivation line:\n{}",
+        text
+    );
+    assert!(
+        text.contains("Would burn"),
+        "missing burn subtitle line:\n{}",
+        text
+    );
+    assert!(
+        text.contains("Would transcode video: x264 crf=20"),
+        "missing video plan:\n{}",
+        text
+    );
     assert!(text.contains("Would"), "missing audio plan:\n{}", text);
-    assert!(text.contains("Would mux to:"), "missing mux destination line:\n{}", text);
-    assert!(text.contains("would be processed"), "missing dry-run summary:\n{}", text);
+    assert!(
+        text.contains("Would mux to:"),
+        "missing mux destination line:\n{}",
+        text
+    );
+    assert!(
+        text.contains("would be processed"),
+        "missing dry-run summary:\n{}",
+        text
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -597,7 +653,10 @@ fn no_warn_multiple_burns_suppresses_warning() {
         &video,
         &mut out,
         ConvertOptions {
-            warn_flags: WarnFlags { no_warn_multiple_burns: true, ..WarnFlags::default() },
+            warn_flags: WarnFlags {
+                no_warn_multiple_burns: true,
+                ..WarnFlags::default()
+            },
             ..Default::default()
         },
     );
@@ -629,7 +688,10 @@ fn no_warn_burn_metadata_suppresses_warning() {
         &video,
         &mut out,
         ConvertOptions {
-            warn_flags: WarnFlags { no_warn_burn_metadata: true, ..WarnFlags::default() },
+            warn_flags: WarnFlags {
+                no_warn_burn_metadata: true,
+                ..WarnFlags::default()
+            },
             ..Default::default()
         },
     );
@@ -661,7 +723,10 @@ fn no_warn_no_default_suppresses_audio_warning() {
         &video,
         &mut out,
         ConvertOptions {
-            warn_flags: WarnFlags { no_warn_no_default: true, ..WarnFlags::default() },
+            warn_flags: WarnFlags {
+                no_warn_no_default: true,
+                ..WarnFlags::default()
+            },
             ..Default::default()
         },
     );
@@ -693,7 +758,10 @@ fn no_warn_no_default_suppresses_subtitle_warning() {
         &video,
         &mut out,
         ConvertOptions {
-            warn_flags: WarnFlags { no_warn_no_default: true, ..WarnFlags::default() },
+            warn_flags: WarnFlags {
+                no_warn_no_default: true,
+                ..WarnFlags::default()
+            },
             ..Default::default()
         },
     );
@@ -725,7 +793,10 @@ fn no_warn_crf_codec_mismatch_suppresses_warning() {
         &video,
         &mut out,
         ConvertOptions {
-            warn_flags: WarnFlags { no_warn_crf_codec_mismatch: true, ..WarnFlags::default() },
+            warn_flags: WarnFlags {
+                no_warn_crf_codec_mismatch: true,
+                ..WarnFlags::default()
+            },
             ..Default::default()
         },
     );
@@ -771,9 +842,21 @@ tracks = [
     let mut out = buf();
     let _ = run_convert(&video, &mut out, ConvertOptions::default());
     let text = String::from_utf8(out).unwrap();
-    assert!(text.contains("encoder.crf=26"), "CRF warning expected:\n{}", text);
-    assert!(text.contains("subtitle tracks have mux=\"burn\""), "multiple-burns warning expected:\n{}", text);
-    assert!(text.contains("burn subtitle track has soft-only metadata"), "burn-metadata warning expected:\n{}", text);
+    assert!(
+        text.contains("encoder.crf=26"),
+        "CRF warning expected:\n{}",
+        text
+    );
+    assert!(
+        text.contains("subtitle tracks have mux=\"burn\""),
+        "multiple-burns warning expected:\n{}",
+        text
+    );
+    assert!(
+        text.contains("burn subtitle track has soft-only metadata"),
+        "burn-metadata warning expected:\n{}",
+        text
+    );
 
     // With --no-warnings: all warnings suppressed; hard error still present.
     let mut out = buf();
@@ -781,16 +864,35 @@ tracks = [
         &video,
         &mut out,
         ConvertOptions {
-            warn_flags: WarnFlags { no_warnings: true, ..WarnFlags::default() },
+            warn_flags: WarnFlags {
+                no_warnings: true,
+                ..WarnFlags::default()
+            },
             ..Default::default()
         },
     );
     let text = String::from_utf8(out).unwrap();
-    assert!(!text.contains("encoder.crf=26 is x265-typical"), "CRF warning should be suppressed:\n{}", text);
-    assert!(!text.contains("subtitle tracks have mux=\"burn\""), "multiple-burns warning should be suppressed:\n{}", text);
-    assert!(!text.contains("burn subtitle track has soft-only metadata"), "burn-metadata warning should be suppressed:\n{}", text);
+    assert!(
+        !text.contains("encoder.crf=26 is x265-typical"),
+        "CRF warning should be suppressed:\n{}",
+        text
+    );
+    assert!(
+        !text.contains("subtitle tracks have mux=\"burn\""),
+        "multiple-burns warning should be suppressed:\n{}",
+        text
+    );
+    assert!(
+        !text.contains("burn subtitle track has soft-only metadata"),
+        "burn-metadata warning should be suppressed:\n{}",
+        text
+    );
     // The hard error (two audio defaults) is still present.
-    assert!(text.contains("multiple audio tracks have default=true"), "hard error must still appear:\n{}", text);
+    assert!(
+        text.contains("multiple audio tracks have default=true"),
+        "hard error must still appear:\n{}",
+        text
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -818,7 +920,10 @@ fn no_warn_redundant_fires_when_sidecar_duplicates_directory_value() {
     let _ = run_convert(
         &video,
         &mut out,
-        ConvertOptions { dry_run: true, ..Default::default() },
+        ConvertOptions {
+            dry_run: true,
+            ..Default::default()
+        },
     );
     let text = String::from_utf8(out).unwrap();
     assert!(
@@ -847,7 +952,10 @@ fn no_warn_redundant_suppressed_by_flag() {
         &mut out,
         ConvertOptions {
             dry_run: true,
-            warn_flags: WarnFlags { no_warn_redundant: true, ..WarnFlags::default() },
+            warn_flags: WarnFlags {
+                no_warn_redundant: true,
+                ..WarnFlags::default()
+            },
             ..Default::default()
         },
     );
@@ -873,7 +981,10 @@ fn no_warn_redundant_suppressed_by_no_warnings() {
         &mut out,
         ConvertOptions {
             dry_run: true,
-            warn_flags: WarnFlags { no_warnings: true, ..WarnFlags::default() },
+            warn_flags: WarnFlags {
+                no_warnings: true,
+                ..WarnFlags::default()
+            },
             ..Default::default()
         },
     );
@@ -917,7 +1028,10 @@ fn no_warn_missing_suppressed_by_flag() {
         &mut out,
         ConvertOptions {
             dry_run: true,
-            warn_flags: WarnFlags { no_warn_missing: true, ..WarnFlags::default() },
+            warn_flags: WarnFlags {
+                no_warn_missing: true,
+                ..WarnFlags::default()
+            },
             ..Default::default()
         },
     );
@@ -941,7 +1055,10 @@ fn no_warn_missing_suppressed_by_no_warnings() {
         &mut out,
         ConvertOptions {
             dry_run: true,
-            warn_flags: WarnFlags { no_warnings: true, ..WarnFlags::default() },
+            warn_flags: WarnFlags {
+                no_warnings: true,
+                ..WarnFlags::default()
+            },
             ..Default::default()
         },
     );
@@ -972,7 +1089,10 @@ tracks = [{ source = 1, lang = "jpn", default = true }]
     let _ = run_convert(
         &video,
         &mut out,
-        ConvertOptions { keep_intermediates: true, ..Default::default() },
+        ConvertOptions {
+            keep_intermediates: true,
+            ..Default::default()
+        },
     );
     let text = String::from_utf8(out).unwrap();
     assert!(
@@ -1018,7 +1138,11 @@ tracks = [{ source = 1, lang = "jpn", default = true }]
     let _ = run_convert(
         &video,
         &mut out,
-        ConvertOptions { dry_run: true, keep_intermediates: true, ..Default::default() },
+        ConvertOptions {
+            dry_run: true,
+            keep_intermediates: true,
+            ..Default::default()
+        },
     );
     let text = String::from_utf8(out).unwrap();
     assert!(
@@ -1044,7 +1168,10 @@ fn generate_config_errors_when_no_cli_overrides() {
     let result = run_convert(
         &video,
         &mut out,
-        ConvertOptions { generate_config: true, ..Default::default() },
+        ConvertOptions {
+            generate_config: true,
+            ..Default::default()
+        },
     );
     assert!(
         matches!(result, Err(Error::GenerateConfigNoOverrides)),
@@ -1157,10 +1284,7 @@ fn generate_config_dry_run_reports_would_write_but_does_not_write() {
         "dry-run should report 'Would write sidecar at:':\n{}",
         text
     );
-    assert!(
-        !sidecar.exists(),
-        "dry-run must NOT write the sidecar"
-    );
+    assert!(!sidecar.exists(), "dry-run must NOT write the sidecar");
 }
 
 #[test]
@@ -1207,7 +1331,10 @@ fn generate_config_warn_flag_appears_in_sidecar() {
         &mut out,
         ConvertOptions {
             generate_config: true,
-            warn_flags: WarnFlags { no_warn_multiple_burns: true, ..WarnFlags::default() },
+            warn_flags: WarnFlags {
+                no_warn_multiple_burns: true,
+                ..WarnFlags::default()
+            },
             ..Default::default()
         },
     );

@@ -40,7 +40,9 @@ pub enum Error {
     #[error("non-interactive context (no TTY); rerun with --yes to auto-confirm")]
     NotInteractive,
 
-    #[error("required field `{field}` is not set in any config layer; configure it in the global, directory, or per-file config")]
+    #[error(
+        "required field `{field}` is not set in any config layer; configure it in the global, directory, or per-file config"
+    )]
     RequiredFieldMissing { field: String },
 
     #[error("output file already exists: {path}")]
@@ -133,7 +135,10 @@ pub enum Error {
          Please add the following fields to {path} manually:\n{fields}",
         fields = fields.iter().map(|f| format!("  {f}")).collect::<Vec<_>>().join("\n"),
     )]
-    RepairResultInvalid { path: std::path::PathBuf, fields: Vec<String> },
+    RepairResultInvalid {
+        path: std::path::PathBuf,
+        fields: Vec<String>,
+    },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

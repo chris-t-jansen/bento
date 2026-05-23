@@ -18,9 +18,8 @@ use std::sync::LazyLock;
 use crate::config::*;
 use crate::resolve::Resolved;
 
-static TEMPLATE_VAR_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
-    regex::Regex::new(r"\{([A-Za-z_][A-Za-z0-9_]*)(?::[^}]*)?\}").unwrap()
-});
+static TEMPLATE_VAR_RE: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"\{([A-Za-z_][A-Za-z0-9_]*)(?::[^}]*)?\}").unwrap());
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Severity {
@@ -76,20 +75,24 @@ fn validate_output(output: &Output, issues: &mut Vec<ValidationIssue>) {
     let Some(naming) = &output.naming else { return };
 
     // Always validate regex syntax when the field is set.
-    let compiled_regex = naming.regex.as_ref().and_then(|pattern| {
-        match regex::Regex::new(pattern) {
-            Ok(re) => Some(re),
-            Err(e) => {
-                issues.push(ValidationIssue::error(
-                    "output.naming.regex",
-                    format!("regex failed to compile: {e}"),
-                ));
-                None
-            }
-        }
-    });
+    let compiled_regex =
+        naming
+            .regex
+            .as_ref()
+            .and_then(|pattern| match regex::Regex::new(pattern) {
+                Ok(re) => Some(re),
+                Err(e) => {
+                    issues.push(ValidationIssue::error(
+                        "output.naming.regex",
+                        format!("regex failed to compile: {e}"),
+                    ));
+                    None
+                }
+            });
 
-    let Some(template) = &naming.template else { return };
+    let Some(template) = &naming.template else {
+        return;
+    };
 
     // Named captures available from the compiled regex (empty if regex absent or invalid).
     let regex_captures: Vec<&str> = compiled_regex
@@ -152,7 +155,10 @@ fn validate_video(video: &Video, issues: &mut Vec<ValidationIssue>) {
 
     // Tune validity per encoder (x265 doesn't support film/stillimage).
     if let (Some(name), Some(tune)) = (enc.name, enc.tune) {
-        if matches!((name, tune), (EncoderName::X265, Tune::Film | Tune::Stillimage)) {
+        if matches!(
+            (name, tune),
+            (EncoderName::X265, Tune::Film | Tune::Stillimage)
+        ) {
             issues.push(ValidationIssue::error(
                 "video.encoder.tune",
                 format!(
@@ -262,7 +268,11 @@ fn validate_audio(audio: &Audio, issues: &mut Vec<ValidationIssue>) {
 // Subtitles
 // =============================================================================
 
-fn validate_subtitles(subs: &Subtitles, container: Option<Container>, issues: &mut Vec<ValidationIssue>) {
+fn validate_subtitles(
+    subs: &Subtitles,
+    container: Option<Container>,
+    issues: &mut Vec<ValidationIssue>,
+) {
     let Some(tracks) = &subs.tracks else { return };
     let effective_container = container.unwrap_or(Container::Mp4);
 
@@ -470,21 +480,29 @@ mod tests {
     }
 
     fn errors(issues: &[ValidationIssue]) -> Vec<&ValidationIssue> {
-        issues.iter().filter(|i| i.severity == Severity::Error).collect()
+        issues
+            .iter()
+            .filter(|i| i.severity == Severity::Error)
+            .collect()
     }
 
     fn warnings(issues: &[ValidationIssue]) -> Vec<&ValidationIssue> {
-        issues.iter().filter(|i| i.severity == Severity::Warning).collect()
+        issues
+            .iter()
+            .filter(|i| i.severity == Severity::Warning)
+            .collect()
     }
 
     // --- Tune validity ------------------------------------------------------
 
     #[test]
     fn x265_with_film_tune_errors() {
-        let issues = check(r#"
+        let issues = check(
+            r#"
 [video]
 encoder = { name = "x265", crf = 22, tune = "film" }
-"#);
+"#,
+        );
         let errs = errors(&issues);
         assert_eq!(errs.len(), 1);
         assert_eq!(errs[0].path, "video.encoder.tune");
@@ -492,32 +510,66 @@ encoder = { name = "x265", crf = 22, tune = "film" }
 
     #[test]
     fn x265_with_stillimage_tune_errors() {
-        let issues = check(r#"
+        let issues = check(
+            r#"
 [video]
 encoder = { name = "x265", crf = 22, tune = "stillimage" }
-"#);
+"#,
+        );
         assert_eq!(errors(&issues).len(), 1);
     }
 
     #[test]
     fn x264_accepts_all_tunes() {
-        for tune in ["film", "animation", "grain", "stillimage", "psnr", "ssim", "fastdecode", "zerolatency", "none"] {
-            let issues = check(&format!(r#"
+        for tune in [
+            "film",
+            "animation",
+            "grain",
+            "stillimage",
+            "psnr",
+            "ssim",
+            "fastdecode",
+            "zerolatency",
+            "none",
+        ] {
+            let issues = check(&format!(
+                r#"
 [video]
 encoder = {{ name = "x264", crf = 20, tune = "{}" }}
-"#, tune));
-            assert!(errors(&issues).is_empty(), "x264 should accept tune={}", tune);
+"#,
+                tune
+            ));
+            assert!(
+                errors(&issues).is_empty(),
+                "x264 should accept tune={}",
+                tune
+            );
         }
     }
 
     #[test]
     fn x265_accepts_animation_grain_etc() {
-        for tune in ["animation", "grain", "psnr", "ssim", "fastdecode", "zerolatency", "none"] {
-            let issues = check(&format!(r#"
+        for tune in [
+            "animation",
+            "grain",
+            "psnr",
+            "ssim",
+            "fastdecode",
+            "zerolatency",
+            "none",
+        ] {
+            let issues = check(&format!(
+                r#"
 [video]
 encoder = {{ name = "x265", crf = 22, tune = "{}" }}
-"#, tune));
-            assert!(errors(&issues).is_empty(), "x265 should accept tune={}", tune);
+"#,
+                tune
+            ));
+            assert!(
+                errors(&issues).is_empty(),
+                "x265 should accept tune={}",
+                tune
+            );
         }
     }
 
@@ -525,54 +577,72 @@ encoder = {{ name = "x265", crf = 22, tune = "{}" }}
 
     #[test]
     fn x265_with_low_crf_warns() {
-        let issues = check(r#"
+        let issues = check(
+            r#"
 [video]
 encoder = { name = "x265", crf = 18 }
-"#);
+"#,
+        );
         let warns = warnings(&issues);
         assert!(warns.iter().any(|w| w.path == "video.encoder.crf"));
     }
 
     #[test]
     fn x264_with_high_crf_warns() {
-        let issues = check(r#"
+        let issues = check(
+            r#"
 [video]
 encoder = { name = "x264", crf = 26 }
-"#);
+"#,
+        );
         let warns = warnings(&issues);
         assert!(warns.iter().any(|w| w.path == "video.encoder.crf"));
     }
 
     #[test]
     fn crf_warning_suppressed_by_config_field() {
-        let issues = check(r#"
+        let issues = check(
+            r#"
 [video]
 encoder = { name = "x265", crf = 18 }
 warn_crf_codec_mismatch = false
-"#);
-        assert!(!warnings(&issues).iter().any(|w| w.path == "video.encoder.crf"));
+"#,
+        );
+        assert!(
+            !warnings(&issues)
+                .iter()
+                .any(|w| w.path == "video.encoder.crf")
+        );
     }
 
     #[test]
     fn matched_codec_crf_no_warning() {
-        let issues = check(r#"
+        let issues = check(
+            r#"
 [video]
 encoder = { name = "x265", crf = 22 }
-"#);
-        assert!(!warnings(&issues).iter().any(|w| w.path == "video.encoder.crf"));
+"#,
+        );
+        assert!(
+            !warnings(&issues)
+                .iter()
+                .any(|w| w.path == "video.encoder.crf")
+        );
     }
 
     // --- Audio default uniqueness/absence ----------------------------------
 
     #[test]
     fn audio_multiple_defaults_errors() {
-        let issues = check(r#"
+        let issues = check(
+            r#"
 [audio]
 tracks = [
     { source = 1, lang = "jpn", default = true },
     { source = 2, lang = "eng", default = true },
 ]
-"#);
+"#,
+        );
         let errs = errors(&issues);
         assert_eq!(errs.len(), 1);
         assert_eq!(errs[0].path, "audio.tracks");
@@ -580,36 +650,42 @@ tracks = [
 
     #[test]
     fn audio_no_default_warns() {
-        let issues = check(r#"
+        let issues = check(
+            r#"
 [audio]
 tracks = [
     { source = 1, lang = "jpn" },
     { source = 2, lang = "eng" },
 ]
-"#);
+"#,
+        );
         let warns = warnings(&issues);
         assert!(warns.iter().any(|w| w.path == "audio.tracks"));
     }
 
     #[test]
     fn audio_no_default_warning_suppressed() {
-        let issues = check(r#"
+        let issues = check(
+            r#"
 [audio]
 warn_no_default = false
 tracks = [{ source = 1, lang = "jpn" }]
-"#);
+"#,
+        );
         assert!(!warnings(&issues).iter().any(|w| w.path == "audio.tracks"));
     }
 
     #[test]
     fn audio_one_default_no_issue() {
-        let issues = check(r#"
+        let issues = check(
+            r#"
 [audio]
 tracks = [
     { source = 1, lang = "jpn", default = true },
     { source = 2, lang = "eng" },
 ]
-"#);
+"#,
+        );
         assert!(errors(&issues).is_empty());
         assert!(!warnings(&issues).iter().any(|w| w.path == "audio.tracks"));
     }
@@ -618,20 +694,25 @@ tracks = [
 
     #[test]
     fn audio_source_zero_errors_with_one_based_message() {
-        let issues = check(r#"
+        let issues = check(
+            r#"
 [audio]
 tracks = [
     { source = 0, lang = "jpn", default = true },
 ]
-"#);
+"#,
+        );
         let errs = errors(&issues);
-        assert!(errs.iter().any(|e| e.path == "audio.tracks[0].source"
-            && e.message.contains("1-based")));
+        assert!(
+            errs.iter()
+                .any(|e| e.path == "audio.tracks[0].source" && e.message.contains("1-based"))
+        );
     }
 
     #[test]
     fn subtitles_source_zero_errors_with_one_based_message() {
-        let issues = check(r#"
+        let issues = check(
+            r#"
 [audio]
 tracks = [{ source = 1, lang = "jpn", default = true }]
 
@@ -639,15 +720,19 @@ tracks = [{ source = 1, lang = "jpn", default = true }]
 tracks = [
     { source = 0, format = "srt", mux = "soft", default = true },
 ]
-"#);
+"#,
+        );
         let errs = errors(&issues);
-        assert!(errs.iter().any(|e| e.path == "subtitles.tracks[0].source"
-            && e.message.contains("1-based")));
+        assert!(
+            errs.iter()
+                .any(|e| e.path == "subtitles.tracks[0].source" && e.message.contains("1-based"))
+        );
     }
 
     #[test]
     fn subtitles_subtract_track_zero_errors() {
-        let issues = check(r#"
+        let issues = check(
+            r#"
 [audio]
 tracks = [{ source = 1, lang = "jpn", default = true }]
 
@@ -655,16 +740,19 @@ tracks = [{ source = 1, lang = "jpn", default = true }]
 tracks = [
     { source = 1, format = "srt", mux = "soft", subtract_track = 0, default = true },
 ]
-"#);
+"#,
+        );
         let errs = errors(&issues);
-        assert!(errs.iter().any(|e| e.path == "subtitles.tracks[0].subtract_track"
-            && e.message.contains("1-based")));
+        assert!(errs.iter().any(
+            |e| e.path == "subtitles.tracks[0].subtract_track" && e.message.contains("1-based")
+        ));
     }
 
     #[test]
     fn subtitles_path_typed_source_unaffected_by_range_check() {
         // Path sources don't have a range; only int sources need to be ≥ 1.
-        let issues = check(r#"
+        let issues = check(
+            r#"
 [audio]
 tracks = [{ source = 1, lang = "jpn", default = true }]
 
@@ -672,7 +760,8 @@ tracks = [{ source = 1, lang = "jpn", default = true }]
 tracks = [
     { source = "edited.srt", format = "srt", mux = "soft", default = true },
 ]
-"#);
+"#,
+        );
         // No source-range error.
         let errs = errors(&issues);
         assert!(!errs.iter().any(|e| e.message.contains("≥ 1")));
@@ -680,13 +769,15 @@ tracks = [
 
     #[test]
     fn audio_source_one_no_range_error() {
-        let issues = check(r#"
+        let issues = check(
+            r#"
 [audio]
 tracks = [
     { source = 1, lang = "jpn", default = true },
     { source = 2, lang = "eng" },
 ]
-"#);
+"#,
+        );
         let errs = errors(&issues);
         assert!(!errs.iter().any(|e| e.message.contains("≥ 1")));
     }
@@ -695,7 +786,8 @@ tracks = [
 
     #[test]
     fn subtitles_filter_and_subtract_both_errors() {
-        let issues = check(r#"
+        let issues = check(
+            r#"
 [subtitles]
 tracks = [
     {
@@ -707,41 +799,51 @@ tracks = [
         default = true,
     },
 ]
-"#);
+"#,
+        );
         let errs = errors(&issues);
         assert!(errs.iter().any(|e| e.path == "subtitles.tracks[0]"));
     }
 
     #[test]
     fn subtitles_multiple_default_errors() {
-        let issues = check(r#"
+        let issues = check(
+            r#"
 [subtitles]
 tracks = [
     { source = 1, format = "srt", mux = "soft", default = true },
     { source = 2, format = "srt", mux = "soft", default = true },
 ]
-"#);
+"#,
+        );
         let errs = errors(&issues);
         assert!(errs.iter().any(|e| e.path == "subtitles.tracks"));
     }
 
     #[test]
     fn subtitles_multiple_burns_warns() {
-        let issues = check(r#"
+        let issues = check(
+            r#"
 [subtitles]
 tracks = [
     { source = 1, format = "ass", mux = "burn" },
     { source = 2, format = "ass", mux = "burn" },
     { source = 3, format = "srt", mux = "soft", default = true },
 ]
-"#);
+"#,
+        );
         let warns = warnings(&issues);
-        assert!(warns.iter().any(|w| w.message.contains("subtitle tracks have mux=\"burn\"")));
+        assert!(
+            warns
+                .iter()
+                .any(|w| w.message.contains("subtitle tracks have mux=\"burn\""))
+        );
     }
 
     #[test]
     fn subtitles_multiple_burns_suppressed() {
-        let issues = check(r#"
+        let issues = check(
+            r#"
 [subtitles]
 warn_multiple_burns = false
 tracks = [
@@ -749,34 +851,51 @@ tracks = [
     { source = 2, format = "ass", mux = "burn" },
     { source = 3, format = "srt", mux = "soft", default = true },
 ]
-"#);
-        assert!(!warnings(&issues).iter().any(|w| w.message.contains("subtitle tracks have mux=\"burn\"")));
+"#,
+        );
+        assert!(
+            !warnings(&issues)
+                .iter()
+                .any(|w| w.message.contains("subtitle tracks have mux=\"burn\""))
+        );
     }
 
     #[test]
     fn subtitles_burn_with_metadata_warns() {
-        let issues = check(r#"
+        let issues = check(
+            r#"
 [subtitles]
 tracks = [
     { source = 1, format = "ass", mux = "burn", lang = "eng", title = "Signs" },
     { source = 2, format = "srt", mux = "soft", default = true },
 ]
-"#);
+"#,
+        );
         let warns = warnings(&issues);
-        assert!(warns.iter().any(|w| w.message.contains("burn subtitle track")));
+        assert!(
+            warns
+                .iter()
+                .any(|w| w.message.contains("burn subtitle track"))
+        );
     }
 
     #[test]
     fn subtitles_burn_metadata_suppressed() {
-        let issues = check(r#"
+        let issues = check(
+            r#"
 [subtitles]
 warn_burn_metadata = false
 tracks = [
     { source = 1, format = "ass", mux = "burn", lang = "eng", title = "Signs" },
     { source = 2, format = "srt", mux = "soft", default = true },
 ]
-"#);
-        assert!(!warnings(&issues).iter().any(|w| w.message.contains("burn subtitle track")));
+"#,
+        );
+        assert!(
+            !warnings(&issues)
+                .iter()
+                .any(|w| w.message.contains("burn subtitle track"))
+        );
     }
 
     // --- External subtitle tracks ------------------------------------------
@@ -785,7 +904,8 @@ tracks = [
     fn external_ass_in_mp4_is_allowed() {
         // External tracks are sidecar files; they're not affected by the
         // container codec restriction that bars soft ASS in MP4.
-        let issues = check(r#"
+        let issues = check(
+            r#"
 [output]
 container = "mp4"
 
@@ -793,9 +913,12 @@ container = "mp4"
 tracks = [
     { source = 1, format = "ass", mux = "external", lang = "eng", default = true },
 ]
-"#);
+"#,
+        );
         assert!(
-            !errors(&issues).iter().any(|e| e.message.contains("format=\"ass\"")),
+            !errors(&issues)
+                .iter()
+                .any(|e| e.message.contains("format=\"ass\"")),
             "external ASS in MP4 should not be an error: {:?}",
             errors(&issues)
         );
@@ -803,7 +926,8 @@ tracks = [
 
     #[test]
     fn soft_ass_in_mp4_still_errors() {
-        let issues = check(r#"
+        let issues = check(
+            r#"
 [output]
 container = "mp4"
 
@@ -811,55 +935,70 @@ container = "mp4"
 tracks = [
     { source = 1, format = "ass", mux = "soft", lang = "eng", default = true },
 ]
-"#);
+"#,
+        );
         assert!(
-            errors(&issues).iter().any(|e| e.message.contains("format=\"ass\"")),
+            errors(&issues)
+                .iter()
+                .any(|e| e.message.contains("format=\"ass\"")),
             "soft ASS in MP4 should still error"
         );
     }
 
     #[test]
     fn external_duplicate_sidecar_names_errors() {
-        let issues = check(r#"
+        let issues = check(
+            r#"
 [subtitles]
 tracks = [
     { source = 1, format = "srt", mux = "external", lang = "eng", title = "English", default = true },
     { source = 2, format = "srt", mux = "external", lang = "eng", title = "English", default = true },
 ]
-"#);
+"#,
+        );
         let errs = errors(&issues);
         assert!(
-            errs.iter().any(|e| e.message.contains("same sidecar filename")),
-            "duplicate external names should error: {:?}", errs
+            errs.iter()
+                .any(|e| e.message.contains("same sidecar filename")),
+            "duplicate external names should error: {:?}",
+            errs
         );
     }
 
     #[test]
     fn external_unique_sidecar_names_ok() {
         // Two external tracks that differ only by title → unique filenames.
-        let issues = check(r#"
+        let issues = check(
+            r#"
 [subtitles]
 tracks = [
     { source = 1, format = "srt", mux = "external", lang = "eng", title = "English", default = true },
     { source = 2, format = "srt", mux = "external", lang = "eng", title = "English SDH", hearing_impaired = true },
 ]
-"#);
+"#,
+        );
         assert!(
-            !errors(&issues).iter().any(|e| e.message.contains("sidecar")),
-            "unique external names should not error: {:?}", errors(&issues)
+            !errors(&issues)
+                .iter()
+                .any(|e| e.message.contains("sidecar")),
+            "unique external names should not error: {:?}",
+            errors(&issues)
         );
     }
 
     #[test]
     fn external_tracks_parse_from_toml() {
         // Smoke-test that mux = "external" round-trips through the config parser.
-        let cfg = crate::config::Config::from_toml_str(r#"
+        let cfg = crate::config::Config::from_toml_str(
+            r#"
 [subtitles]
 tracks = [
     { source = 1, format = "srt", mux = "external", lang = "eng", default = true },
     { source = 2, format = "ass", mux = "burn" },
 ]
-"#).unwrap();
+"#,
+        )
+        .unwrap();
         use crate::config::SubtitleMux;
         let tracks = cfg.subtitles.tracks.unwrap();
         assert_eq!(tracks[0].mux, Some(SubtitleMux::External));
@@ -870,97 +1009,127 @@ tracks = [
 
     #[test]
     fn naming_template_show_without_metadata_errors() {
-        let issues = check(r#"
+        let issues = check(
+            r#"
 [output]
 naming = { template = "{show} - ep{source_basename}" }
-"#);
+"#,
+        );
         let errs = errors(&issues);
         assert!(
-            errs.iter().any(|e| e.path == "output.naming.template" && e.message.contains("{show}")),
-            "expected undefined-variable error for {{show}}, got: {:?}", errs
+            errs.iter()
+                .any(|e| e.path == "output.naming.template" && e.message.contains("{show}")),
+            "expected undefined-variable error for {{show}}, got: {:?}",
+            errs
         );
     }
 
     #[test]
     fn naming_template_show_with_metadata_ok() {
-        let issues = check(r#"
+        let issues = check(
+            r#"
 [output]
 metadata = { show = "Cowboy Bebop" }
 naming = { template = "{show} - ep{source_basename}" }
-"#);
+"#,
+        );
         assert!(
-            !errors(&issues).iter().any(|e| e.path == "output.naming.template"),
-            "expected no naming error when metadata.show is set: {:?}", errors(&issues)
+            !errors(&issues)
+                .iter()
+                .any(|e| e.path == "output.naming.template"),
+            "expected no naming error when metadata.show is set: {:?}",
+            errors(&issues)
         );
     }
 
     #[test]
     fn naming_template_builtin_vars_ok() {
-        let issues = check(r#"
+        let issues = check(
+            r#"
 [output]
 naming = { template = "{source_dir}/{source_basename}" }
-"#);
+"#,
+        );
         assert!(
-            !errors(&issues).iter().any(|e| e.path == "output.naming.template"),
-            "built-in variables should not produce an error: {:?}", errors(&issues)
+            !errors(&issues)
+                .iter()
+                .any(|e| e.path == "output.naming.template"),
+            "built-in variables should not produce an error: {:?}",
+            errors(&issues)
         );
     }
 
     #[test]
     fn naming_template_regex_capture_ok() {
-        let issues = check(r#"
+        let issues = check(
+            r#"
 [output]
 naming = {
     regex = 'S(?P<s>\d+)E(?P<episode>\d+)',
     template = "S{s:02}E{episode:02}",
 }
-"#);
+"#,
+        );
         assert!(
-            !errors(&issues).iter().any(|e| e.path == "output.naming.template"),
-            "regex capture variables should not produce an error: {:?}", errors(&issues)
+            !errors(&issues)
+                .iter()
+                .any(|e| e.path == "output.naming.template"),
+            "regex capture variables should not produce an error: {:?}",
+            errors(&issues)
         );
     }
 
     #[test]
     fn naming_template_missing_regex_capture_errors() {
         // Template references {episode} but the regex only has capture {s}.
-        let issues = check(r#"
+        let issues = check(
+            r#"
 [output]
 naming = {
     regex = 'S(?P<s>\d+)',
     template = "S{s:02}E{episode:02}",
 }
-"#);
+"#,
+        );
         let errs = errors(&issues);
         assert!(
-            errs.iter().any(|e| e.path == "output.naming.template" && e.message.contains("{episode}")),
-            "expected undefined-variable error for {{episode}}: {:?}", errs
+            errs.iter()
+                .any(|e| e.path == "output.naming.template" && e.message.contains("{episode}")),
+            "expected undefined-variable error for {{episode}}: {:?}",
+            errs
         );
     }
 
     #[test]
     fn naming_template_unknown_var_no_regex_errors() {
-        let issues = check(r#"
+        let issues = check(
+            r#"
 [output]
 naming = { template = "{myvar}" }
-"#);
+"#,
+        );
         let errs = errors(&issues);
         assert!(
-            errs.iter().any(|e| e.path == "output.naming.template" && e.message.contains("{myvar}")),
-            "expected undefined-variable error for {{myvar}}: {:?}", errs
+            errs.iter()
+                .any(|e| e.path == "output.naming.template" && e.message.contains("{myvar}")),
+            "expected undefined-variable error for {{myvar}}: {:?}",
+            errs
         );
     }
 
     #[test]
     fn naming_invalid_regex_errors() {
-        let issues = check(r#"
+        let issues = check(
+            r#"
 [output]
 naming = { regex = "[(invalid" }
-"#);
+"#,
+        );
         let errs = errors(&issues);
         assert!(
             errs.iter().any(|e| e.path == "output.naming.regex"),
-            "expected regex compile error: {:?}", errs
+            "expected regex compile error: {:?}",
+            errs
         );
     }
 
@@ -969,15 +1138,19 @@ naming = { regex = "[(invalid" }
         // A regex capture named `show` satisfies {show} in the template even
         // when metadata.show is not set — captures are inserted after metadata
         // in naming.rs and can supply variables metadata doesn't.
-        let issues = check(r#"
+        let issues = check(
+            r#"
 [output]
 naming = {
     regex = '(?P<show>.+) S\d+E\d+',
     template = "{show} episode",
 }
-"#);
+"#,
+        );
         assert!(
-            !errors(&issues).iter().any(|e| e.path == "output.naming.template"),
+            !errors(&issues)
+                .iter()
+                .any(|e| e.path == "output.naming.template"),
             "regex capture `show` should satisfy {{show}} even without metadata.show: {:?}",
             errors(&issues)
         );
@@ -985,27 +1158,39 @@ naming = {
 
     #[test]
     fn naming_multiple_undefined_vars_all_reported() {
-        let issues = check(r#"
+        let issues = check(
+            r#"
 [output]
 naming = { template = "{show} S{season:02}" }
-"#);
+"#,
+        );
         let errs: Vec<_> = errors(&issues)
             .into_iter()
             .filter(|e| e.path == "output.naming.template")
             .collect();
-        assert_eq!(errs.len(), 2, "both {{show}} and {{season}} should error: {:?}", errs);
+        assert_eq!(
+            errs.len(),
+            2,
+            "both {{show}} and {{season}} should error: {:?}",
+            errs
+        );
     }
 
     #[test]
     fn naming_season_and_year_from_metadata_ok() {
-        let issues = check(r#"
+        let issues = check(
+            r#"
 [output]
 metadata = { show = "Bebop", season = 1, year = 1998 }
 naming = { template = "{show} S{season:02} ({year})" }
-"#);
+"#,
+        );
         assert!(
-            !errors(&issues).iter().any(|e| e.path == "output.naming.template"),
-            "all metadata vars set, should be clean: {:?}", errors(&issues)
+            !errors(&issues)
+                .iter()
+                .any(|e| e.path == "output.naming.template"),
+            "all metadata vars set, should be clean: {:?}",
+            errors(&issues)
         );
     }
 
@@ -1013,7 +1198,8 @@ naming = { template = "{show} S{season:02} ({year})" }
 
     #[test]
     fn canonical_anime_episode_config_validates_clean() {
-        let issues = check(r#"
+        let issues = check(
+            r#"
 [output]
 container = "mp4"
 metadata = { show = "Cowboy Bebop", season = 1, year = 1998 }
@@ -1032,8 +1218,17 @@ tracks = [
     { source = 1, format = "srt", mux = "soft", subtract_track = 2, lang = "eng", title = "English", default = true },
     { source = 2, format = "ass", mux = "burn" },
 ]
-"#);
-        assert!(errors(&issues).is_empty(), "expected no errors, got: {:?}", errors(&issues));
-        assert!(warnings(&issues).is_empty(), "expected no warnings, got: {:?}", warnings(&issues));
+"#,
+        );
+        assert!(
+            errors(&issues).is_empty(),
+            "expected no errors, got: {:?}",
+            errors(&issues)
+        );
+        assert!(
+            warnings(&issues).is_empty(),
+            "expected no warnings, got: {:?}",
+            warnings(&issues)
+        );
     }
 }

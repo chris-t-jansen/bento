@@ -91,7 +91,6 @@ pub enum Command {
         quiet: bool,
 
         // --- Warning suppression --------------------------------------------
-
         /// Suppress all warnings for this run. Equivalent to passing every
         /// individual --no-warn-* flag.
         #[arg(long = "no-warnings")]
@@ -248,22 +247,27 @@ fn check_binary(name: &'static str, out: &mut dyn Write) -> Result<bool> {
             Ok(false)
         }
         Some(bin) => {
-            let ver_str = bin
-                .version
-                .map(|v| format!(" ({v})"))
-                .unwrap_or_default();
+            let ver_str = bin.version.map(|v| format!(" ({v})")).unwrap_or_default();
 
             let band = bin.version.map(|v| v.band());
 
             match band {
                 Some(VersionBand::BelowMinimum) => {
-                    writeln!(out, "{name}: warning — version{ver_str} is below the required minimum ({min})", min = crate::ffmpeg::MINIMUM)
-                        .map_err(crate::io_render_err)?;
+                    writeln!(
+                        out,
+                        "{name}: warning — version{ver_str} is below the required minimum ({min})",
+                        min = crate::ffmpeg::MINIMUM
+                    )
+                    .map_err(crate::io_render_err)?;
                     if let Some(p) = &bin.path {
                         writeln!(out, "  {}", p.display()).map_err(crate::io_render_err)?;
                     }
-                    writeln!(out, "  Bento may not work correctly. Please upgrade to {name} {} or later.", crate::ffmpeg::MINIMUM)
-                        .map_err(crate::io_render_err)?;
+                    writeln!(
+                        out,
+                        "  Bento may not work correctly. Please upgrade to {name} {} or later.",
+                        crate::ffmpeg::MINIMUM
+                    )
+                    .map_err(crate::io_render_err)?;
                 }
                 Some(VersionBand::AboveTestedMajor) => {
                     writeln!(out, "{name}: ok{ver_str}").map_err(crate::io_render_err)?;
