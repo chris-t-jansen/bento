@@ -24,6 +24,9 @@ default_theme_dark = "bento-dark"
 default_theme_light = "bento-light"
 colorset = "light"
 
+[extra.favicon]
+base_path = "/bento/icons/"
+
 [extra.sidebar]
 expand_depth = 2
 
