@@ -30,6 +30,12 @@ jobs:
           curl -sL "https://github.com/getzola/zola/releases/download/v${ZOLA_VERSION}/zola-v${ZOLA_VERSION}-x86_64-unknown-linux-gnu.tar.gz" \
             | tar xz -C /usr/local/bin
 
+      - name: Build CSS with custom themes
+        run: |
+          curl -sLo docs/themes/goyo/src/tailwindcss https://github.com/tailwindlabs/tailwindcss/releases/latest/download/tailwindcss-linux-x64
+          chmod +x docs/themes/goyo/src/tailwindcss
+          docs/themes/goyo/src/tailwindcss -i docs/src/main.css -o docs/static/css/main.css --minify
+
       - name: Build
         run: cd docs && zola build
 
