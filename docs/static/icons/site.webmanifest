@@ -1,0 +1,14 @@
+{
+  "name": "Bento Documentation",
+  "short_name": "Bento",
+  "icons": [
+    {
+      "src": "/icons/favicon-96x96.png",
+      "sizes": "96x96",
+      "type": "image/png"
+    }
+  ],
+  "theme_color": "#ff8c50",
+  "background_color": "#f5f0e7",
+  "display": "browser"
+}

@@ -1,0 +1,24 @@
+default:
+    @just --list
+
+# Download Tailwind binary into the Goyo theme src (arm64 macOS)
+setup-macos:
+    curl -sLo themes/goyo/src/tailwindcss https://github.com/tailwindlabs/tailwindcss/releases/latest/download/tailwindcss-macos-arm64
+    chmod +x themes/goyo/src/tailwindcss
+
+# Download Tailwind binary into the Goyo theme src (x64 Linux)
+setup-linux:
+    curl -sLo themes/goyo/src/tailwindcss https://github.com/tailwindlabs/tailwindcss/releases/latest/download/tailwindcss-linux-x64
+    chmod +x themes/goyo/src/tailwindcss
+
+# Compile custom themes into static/css/main.css
+theme-css:
+    themes/goyo/src/tailwindcss -i src/main.css -o static/css/main.css --minify
+
+# Build the full docs site
+build: theme-css
+    zola build
+
+# Run the dev server (rebuilds CSS first)
+dev: theme-css
+    zola serve

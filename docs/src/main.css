@@ -1,0 +1,6 @@
+@config "./tailwind.config.js";
+@import "../themes/goyo/src/main.css";
+
+/* Scan the project's content directory (Goyo's built-in @source targets its
+   own content/ dir; this covers the actual docs pages at docs/content/) */
+@source "../content/**/*.md";
