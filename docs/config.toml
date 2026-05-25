@@ -12,15 +12,16 @@ nav = [
 footer_html = "Bento is dual-licensed under <a href='https://github.com/chris-t-jansen/bento/blob/main/LICENSE-MIT'>MIT</a> and <a href='https://github.com/chris-t-jansen/bento/blob/main/LICENSE-APACHE'>Apache 2.0</a>. Documentation built with <a href='https://www.getzola.org'>Zola</a> and <a href='https://github.com/hahwul/goyo'>Goyo</a>."
 edit_url = "https://github.com/chris-t-jansen/bento/edit/main/docs/content"
 issue_url = "https://github.com/chris-t-jansen/bento/issues"
-enable_custom_css = true
+enable_custom_css = false
 
 [extra.logo]
 text = "Bento"
-image_path = "images/logo.png"
+dark_image_path = "images/banner-light-transparent.png"   # Logo for dark theme
+light_image_path = "images/banner-dark-transparent.png" # Logo for light theme
 
 [extra.theme]
-default_theme_dark = "synthwave"
-default_theme_light = "retro"
+default_theme_dark = "bento-dark"
+default_theme_light = "bento-light"
 colorset = "light"
 
 [extra.sidebar]

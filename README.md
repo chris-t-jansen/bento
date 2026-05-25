@@ -1,4 +1,4 @@
-![Bento project banner](assets/logo/logo_banner.png)
+![Bento project banner](assets/logo/dark/banner-dark.png)
 
 # Bento
 
