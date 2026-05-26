@@ -2,29 +2,39 @@
 title = "Subtitles"
 description = "Soft mux, burn-in, external sidecars, ASS style filtering, and track subtraction."
 weight = 5
+
+[extra]
+toc_strip_signatures = true
 +++
 
-The `[subtitles]` section configures all subtitle output. Each track in the `tracks` list independently specifies its source, how it's derived, and how it appears in the output. Unlike `[audio]`, there are no section-level per-track defaults — every track is fully self-contained.
+The `[subtitles]` section configures all subtitle output. Each track in the `tracks` list independently specifies its source, how it's derived, and how it appears in the output. Unlike `[audio]`, there are no section-level per-track defaults — the section-level fields are warning toggles only, and every track is fully self-contained.
 
 ```
 [subtitles]
+# Warnings
 warn_multiple_burns  = <bool>
 warn_burn_metadata   = <bool>
 warn_no_default      = <bool>
 warn_ass_to_srt      = <bool>
 
+# Track fields
 tracks = [
     {
-        source           = <integer> | <string>
+        # Routing
+        source           = <integer> | <path>
         format           = "srt" | "ass"
         mux              = "soft" | "burn" | "external"
-        subtract_track   = <integer> | <string>    # mutually exclusive with filter
+
+        # Derivation (mutually exclusive — at most one)
         filter = {
             style = <string>
             font  = <string>
             size  = <integer>
             mode  = "retain" | "remove"
         }
+        subtract_track   = <integer> | <path>
+
+        # Metadata (soft/external tracks only)
         lang             = <string>
         title            = <string>
         default          = <bool>
@@ -36,70 +46,62 @@ tracks = [
 ]
 ```
 
-## Section-only fields
+## Fields
 
-### `warn_multiple_burns`
+### `warn_multiple_burns = <bool>` {#warn_multiple_burns}
 
 Warn if more than one track has `mux = "burn"`. Default `true`. Multiple burn layers are supported (e.g. foreign-language hardsubs alongside signs), but the configuration is also a common mistake. Set to `false` to suppress if intentional.
 
-### `warn_burn_metadata`
+### `warn_burn_metadata = <bool>` {#warn_burn_metadata}
 
 Warn if any burn track has soft-track metadata fields set (`lang`, `title`, `default`, etc.). Default `true`. Burn tracks are rendered as pixels and have no metadata channel in the output, so these fields have no effect — the warning catches leftover metadata from a track that was switched from soft to burn.
 
-### `warn_no_default`
+### `warn_no_default = <bool>` {#warn_no_default}
 
-Warn if no track in the list is marked `default = true`. Default `true`. Symmetric with `[audio].warn_no_default`.
+Warn if no track in the list is marked `default = true`. Default `true`. Symmetric with `[audio].warn_no_default` — without a default track, Jellyfin falls back to its own selection logic, which may not match your preference.
 
-### `warn_ass_to_srt`
+### `warn_ass_to_srt = <bool>` {#warn_ass_to_srt}
 
 Warn when a track is processed as ASS but emitted as SRT. Default `true`. The conversion is lossy — styling, positioning, and effects are stripped to plain text. Legitimate but worth flagging. Set to `false` to suppress if intentional.
 
-## Per-track fields
+### `tracks = [ <track>, ... ]` {#tracks}
 
-### Routing
+A list of output subtitle tracks. Each entry describes one track.
 
-| Field | Required | Description |
-|---|---|---|
-| `source` | Yes | Source track index (integer) in the input file, or path to an external subtitle file (string). Multiple output tracks can share a source. |
-| `format` | No | Output format: `"srt"` or `"ass"`. For soft tracks, this is the muxed stream format. If the input is ASS and `format = "srt"`, the conversion is lossy — styling is stripped. |
-| `mux` | No | `"soft"` (mux into container), `"burn"` (render onto video via libass), or `"external"` (write as a sidecar file). |
+- **`source = <integer> | <path>`**
+    - Source track index in the input file (1-based), or a path to an external subtitle file. Multiple output tracks can share a source. Required. When a string, Bento reads from that file instead of extracting from the source video; paths resolve relative to the config file that contains them, not CWD. Supported extensions: `.srt`, `.ass`, `.ssa`.
+- **`format = <option>`**
+    - Output format: `"srt"` or `"ass"`. For soft tracks, this is the muxed stream format. If the input is ASS and `format = "srt"`, the conversion is lossy — styling is stripped.
+- **`mux = <option>`**
+    - `"soft"` (mux into the container), `"burn"` (render onto the video via libass), or `"external"` (write as a sidecar file). See [External subtitle tracks](#external-subtitle-tracks) for `"external"` behavior.
+- **`filter = <inline table>`**
+    - Keep or drop dialogue events based on ASS style attributes. Valid only when the input is ASS. Mutually exclusive with `subtract_track`.
+        - **`style = <string>`** — Match by ASS style name (e.g. `"Main"`, `"Signs"`).
+        - **`font = <string>`** — Match by font name.
+        - **`size = <integer>`** — Match by font size.
+        - **`mode = <option>`** — `"retain"` keeps only matching events; `"remove"` drops them. Multiple match keys are AND-ed.
+- **`subtract_track = <integer> | <path>`**
+    - Drop events whose `(start, end)` timestamps exactly match an event in another track. Value is a track index (1-based) or file path. Mutually exclusive with `filter`. The "full dialogue minus signs-only = dialogue-only" case.
+- **`lang = <string>`**
+    - ISO 639 language code.
+- **`title = <string>`**
+    - User-facing label.
+- **`default = <bool>`**
+    - Auto-display disposition. At most one track may set this; multiple `default = true` is a hard error.
+- **`forced = <bool>`**
+    - Show this track even when subtitles are off — for forced-narrative content (foreign-language scenes, on-screen text).
+- **`commentary = <bool>`**
+    - Marks the track as commentary.
+- **`hearing_impaired = <bool>`**
+    - SDH/CC disposition.
 
-**File-path sources:** When `source` is a string, Bento reads the subtitle data from that file instead of extracting it from the source video. Paths resolve relative to the config file that contains them, not CWD. Supported extensions: `.srt`, `.ass`, `.ssa`.
+The last six fields are metadata: they apply to soft and external tracks only. On burn tracks they have no effect (burn tracks are pixels, not muxed streams) and trigger `warn_burn_metadata`. Of the dispositions, only `default` is uniqueness-enforced — the others are category flags that multiple tracks may set.
 
-### Derivation (mutually exclusive — at most one per track)
+## Behavior
 
-| Field | Description |
-|---|---|
-| `filter` | Keep or drop dialogue events based on ASS style attributes. Valid only when the input is ASS. |
-| `subtract_track` | Drop events whose `(start, end)` timestamps exactly match an event in another track. Value is a track index (integer) or file path (string). The "full minus signs = dialogue-only" case. |
+### External subtitle tracks
 
-**`filter` fields:**
-
-| Field | Description |
-|---|---|
-| `style` | Match by ASS style name (e.g. `"Main"`, `"Signs"`). |
-| `font` | Match by font name. |
-| `size` | Match by font size. |
-| `mode` | `"retain"` keeps only matching events; `"remove"` drops them. Multiple match keys are AND-ed. |
-
-### Soft-track metadata
-
-These fields apply to soft and external tracks. On burn tracks, they have no effect (burn tracks are pixels, not muxed streams) and trigger `warn_burn_metadata`.
-
-| Field | Description |
-|---|---|
-| `lang` | ISO 639 language code. |
-| `title` | User-facing label. |
-| `default` | Auto-display disposition. At most one track may set this; multiple `default = true` is a hard error. |
-| `forced` | Show this track even when subtitles are off — for forced-narrative content (foreign-language scenes, on-screen text). |
-| `commentary` | Marks the track as commentary. |
-| `hearing_impaired` | SDH/CC disposition. |
-
-Only `default` is uniqueness-enforced. The other dispositions are category flags — multiple tracks may set them.
-
-## External subtitle tracks (`mux = "external"`)
-
-External tracks are written as sidecar files next to the output video, targeting Jellyfin's [external subtitle](https://jellyfin.org/docs/general/server/media/shows#external-subtitles-and-audio-tracks) feature. Useful for tracks you want to be able to edit or replace without remuxing, or for formats that MP4 can't carry natively as soft tracks.
+External tracks (`mux = "external"`) are written as sidecar files next to the output video, targeting Jellyfin's [external subtitle](https://jellyfin.org/docs/general/server/media/shows#external-subtitles-and-audio-tracks) feature. Useful for tracks you want to be able to edit or replace without remuxing, or for formats that MP4 can't carry natively as soft tracks.
 
 **Filename format:** `<output_basename>.<title?>.<lang?>.<flags?>.<ext>`
 
@@ -110,7 +112,7 @@ External tracks are written as sidecar files next to the output video, targeting
 
 A track with `lang = "eng"`, `title = "English"`, `default = true`, `format = "srt"` against output `episode06.mp4` produces `episode06.English.eng.default.srt`.
 
-The `[output].on_existing` policy applies to sidecar collisions. Sidecar filename uniqueness is validated at config time — two external tracks resolving to the same filename is a hard config error.
+The [`[output].on_existing`](@/configuration/output.md#on_existing) policy applies to sidecar collisions. Sidecar filename uniqueness is validated at config time — two external tracks resolving to the same filename is a hard config error.
 
 ## Examples
 

@@ -2,23 +2,35 @@
 title = "Audio"
 description = "Codec, bitrate, mixdown, loudness normalization, and per-track configuration."
 weight = 4
+
+[extra]
+toc_strip_signatures = true
 +++
 
-The `[audio]` section configures all audio output. It has two levels: section-level fields that act as per-track defaults, and a `tracks` list that describes each output track. Settings at the section level cascade to every track that doesn't override them individually.
+The `[audio]` section configures all audio output. It has section-level fields and a `tracks` list describing each output track. Several section-level fields — `encoder`, `bitrate`, `mixdown`, `force_bitrate`, `force_mixdown` — also act as per-track defaults: every track inherits them unless it overrides them individually.
 
 ```
 [audio]
-encoder          = "aac" | "opus" | "flac"
-bitrate          = <integer>
-mixdown          = "stereo" | "5point1" | "mono" | "dpl2"
-force_mixdown    = <bool>
-force_bitrate    = <bool>
-normalize_mix    = <bool>
+# Warnings
 warn_no_default  = <bool>
 
+# Section-only fields
+normalize_mix    = <bool>
+
+# All-tracks fields
+encoder          = "aac" | "opus" | "flac"
+bitrate          = <integer>
+mixdown          = "stereo" | "5point1" | "mono"
+force_mixdown    = <bool>
+force_bitrate    = <bool>
+
+# Track fields
 tracks = [
     {
+        # Required fields
         source           = <integer>
+
+        # Optional fields
         lang             = <string>
         title            = <string>
         default          = <bool>
@@ -27,87 +39,94 @@ tracks = [
         commentary       = <bool>
         hearing_impaired = <bool>
         visual_impaired  = <bool>
-        encoder          = "aac" | "opus" | "flac"    # overrides section default
-        bitrate          = <integer>                   # overrides section default
-        mixdown          = "stereo" | "5point1" | "mono" | "dpl2"  # overrides section default
-        force_bitrate    = <bool>         # overrides section default
-        force_mixdown    = <bool>         # overrides section default
+
+        # Per-track override fields
+        encoder          = "aac" | "opus" | "flac"
+        bitrate          = <integer>
+        mixdown          = "stereo" | "5point1" | "mono"
+        force_bitrate    = <bool>
+        force_mixdown    = <bool>
     },
     ...
 ]
 ```
 
-## Section-level fields (per-track defaults)
+## Fields
 
-These fields apply to every track in the `tracks` list unless overridden per-track.
+### `warn_no_default = <bool>` {#warn_no_default}
 
-### `encoder`
+Warn if no track in the list is marked `default = true`. Default `true`. Without a default track, Jellyfin falls back to its own track-selection logic, which may not match your preference. Applies at the section level only — it cannot be set per-track.
 
-Target codec for audio output. Default `"aac"`.
+### `normalize_mix = <bool>` {#normalize_mix}
 
-Common values: `"aac"`, `"opus"`, `"flac"`. There is no explicit `"copy"` value — Bento decides whether to copy or transcode based on the copy/transcode rules below.
+Apply ffmpeg's `loudnorm` filter to surround-to-stereo downmixes. Default `true`. Addresses the quiet-dialogue artifact common in anime surround sources downmixed to stereo. Applies at the section level only — it cannot be set per-track.
 
-### `bitrate`
+### `encoder = <option>` {#encoder}
 
-Target bitrate in kbps for transcoded output. Default `192`. Ignored when Bento copies the stream rather than transcoding.
+Sets the target codec for audio output across all tracks. Default `"aac"`. Can be overridden on a per-track basis.
 
-### `mixdown`
+Common values: `"aac"`, `"opus"`, `"flac"`. There is no explicit `"copy"` value — Bento decides whether to copy or transcode based on the rules in [Copy vs. transcode](#copy-vs-transcode).
 
-Output channel layout. Default `"stereo"`.
+### `bitrate = <integer>` {#bitrate}
 
-| Value | Description |
-|---|---|
-| `"stereo"` | 2-channel stereo |
-| `"5point1"` | 5.1 surround |
-| `"mono"` | Mono |
-| `"dpl2"` | Dolby Pro Logic II (matrix-encoded stereo) |
+Sets the target bitrate in kbps for transcoded output across all tracks. Default `192`. Can be overridden on a per-track basis. Ignored when Bento copies the stream rather than transcoding.
 
-### `force_mixdown`
+### `mixdown = <option>` {#mixdown}
 
-When `true` (default), transcode if the source channel layout differs from `mixdown`. Setting to `false` makes `mixdown` advisory — it applies if transcoding happens for other reasons, but does not itself trigger a transcode.
+Sets the output channel layout across all tracks. Default `"stereo"`. Can be overridden on a per-track basis.
 
-### `force_bitrate`
+- **`"stereo"`** — 2-channel stereo
+- **`"5point1"`** — 5.1 surround
+- **`"mono"`** — mono
 
-When `true`, transcode if the source bitrate exceeds the target `bitrate`. Default `false`.
+### `force_mixdown = <bool>` {#force_mixdown}
+
+When `true` (default), transcode if the source channel layout differs from `mixdown`. Setting to `false` makes `mixdown` advisory — it applies if transcoding happens for other reasons, but does not itself trigger a transcode. Can be overridden on a per-track basis.
+
+### `force_bitrate = <bool>` {#force_bitrate}
+
+When `true`, transcode if the source bitrate exceeds the target `bitrate`. Default `false`. Can be overridden on a per-track basis.
 
 Source bitrate below target never triggers a transcode regardless of this flag — there is no benefit to re-encoding lossy audio at a higher bitrate.
 
-## Section-only fields
+### `tracks = [ <track>, ... ]` {#tracks}
 
-These apply at the section level and do not cascade to individual tracks.
+A list of output audio tracks. Each entry describes one track.
 
-### `normalize_mix`
-
-Apply ffmpeg's `loudnorm` filter to surround-to-stereo downmixes. Default `true`. Addresses the quiet-dialogue artifact common in anime surround sources downmixed to stereo.
-
-### `warn_no_default`
-
-Warn if no track in the list is marked `default = true`. Default `true`. Without a default track, Jellyfin falls back to its own track-selection logic, which may not match your preference.
-
-## Per-track fields
-
-Each entry in `tracks` describes one output audio track.
-
-| Field | Required | Description |
-|---|---|---|
-| `source` | Yes | Source audio track index in the input file. |
-| `lang` | No | ISO 639 language code (e.g. `"jpn"`, `"eng"`). Strongly recommended for Jellyfin track selection. |
-| `title` | No | User-facing label (e.g. `"Japanese"`, `"Director's Commentary"`). |
-| `default` | No | Auto-play disposition. At most one track may set this; multiple `default = true` is a hard error. |
-| `forced` | No | Play this track even when audio is set to a different language. |
-| `original` | No | Marks the original-language track. |
-| `commentary` | No | Marks the track as commentary. |
-| `hearing_impaired` | No | Marks a dialogue-emphasized mix for hard-of-hearing listeners. |
-| `visual_impaired` | No | Marks an audio description track for blind or low-vision viewers. |
-| `encoder` | No | Override section-level `encoder` for this track. |
-| `bitrate` | No | Override section-level `bitrate` for this track. |
-| `mixdown` | No | Override section-level `mixdown` for this track. |
-| `force_bitrate` | No | Override section-level `force_bitrate` for this track. |
-| `force_mixdown` | No | Override section-level `force_mixdown` for this track. |
+- **`source = <integer>`**
+    - Source audio track index in the input file (1-based). Required.
+- **`lang = <string>`**
+    - ISO 639 language code (e.g. `"jpn"`, `"eng"`). Strongly recommended for Jellyfin track selection.
+- **`title = <string>`**
+    - User-facing label (e.g. `"Japanese"`, `"Director's Commentary"`).
+- **`default = <bool>`**
+    - Auto-play disposition. At most one track may set this; multiple `default = true` is a hard error.
+- **`forced = <bool>`**
+    - Play this track even when audio is set to a different language.
+- **`original = <bool>`**
+    - Marks the original-language track.
+- **`commentary = <bool>`**
+    - Marks the track as commentary.
+- **`hearing_impaired = <bool>`**
+    - Marks a dialogue-emphasized mix for hard-of-hearing listeners.
+- **`visual_impaired = <bool>`**
+    - Marks an audio description track for blind or low-vision viewers.
+- **`encoder = <option>`**
+    - Overrides the section-level setting for this track.
+- **`bitrate = <integer>`**
+    - Overrides the section-level setting for this track.
+- **`mixdown = <option>`**
+    - Overrides the section-level setting for this track.
+- **`force_bitrate = <bool>`**
+    - Overrides the section-level setting for this track.
+- **`force_mixdown = <bool>`**
+    - Overrides the section-level setting for this track.
 
 Only `default` is uniqueness-enforced. The other dispositions (`forced`, `original`, `commentary`, `hearing_impaired`, `visual_impaired`) are category flags — multiple tracks may set them.
 
-## Copy vs. transcode
+## Behavior
+
+### Copy vs. transcode
 
 Bento decides automatically whether to copy or re-encode each source audio stream. Three conditions can independently trigger transcoding:
 

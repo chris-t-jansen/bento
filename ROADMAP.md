@@ -79,7 +79,7 @@ Foundation pieces that are working end-to-end. Most have at least light test cov
 
 ## Not started
 
-*(nothing — all design-doc features are now implemented)*
+- **`dpl2` (Dolby Pro Logic II) mixdown option** — DESIGN.md §Audio (line 290, `mixdown` values). Listed in the design spec's `mixdown` values but absent from the `Mixdown` enum in `src/config/audio.rs` (only `stereo`, `5point1`, `mono` exist). Because the enum deserializes strictly, `mixdown = "dpl2"` currently fails to parse. Removed from the configuration docs (2026-05-26) pending implementation.
 
 ---
 
@@ -87,6 +87,7 @@ Foundation pieces that are working end-to-end. Most have at least light test cov
 
 Anything explicitly deferred in DESIGN.md or surfaced as future work. Move items here from "Not started" if a session concludes they're out of scope for MVP.
 
+- **Reconsider `normalize_mix` scope and add a sanity warning.** Currently section-only (`Audio` struct in `src/config/audio.rs`; no field on `AudioTrack`). Two things to think through: (1) it arguably should be per-track-overridable like `encoder`/`bitrate`/`mixdown`, since downmix normalization is a per-track concern; (2) it only does anything on surround→stereo downmixes, so setting `normalize_mix = true` when no track targets `mixdown = "stereo"` is likely a mistake worth warning about. Needs more design thought before implementing. Surfaced 2026-05-26 during docs work.
 - **Refactor `pipeline::run_convert_directory` and `pipeline::run_convert_file` to reduce argument counts.** Both functions currently take 8 and 10 positional arguments respectively, exceeding clippy's `too_many_arguments` threshold. They are individually `#[allow]`-ed with TODO markers. Likely fix: bundle `cli_config`, `dry_run`, `verbosity`, `warn_flags`, `temp_root`, and the output writer into a single `ConvertContext`-style struct that both functions take by reference. Touches the `convert` command path; consider doing it alongside any other convert-pipeline refactor.
 
 ---

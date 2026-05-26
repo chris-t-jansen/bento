@@ -1,0 +1,42 @@
+{% import "macros/utils.html" as utils %}
+{# Override of the Goyo theme's toc macro.
+   Pages may carry headings with a `name = <type>` signature (e.g. the
+   configuration reference's `force_mixdown = <bool>`). When a page sets
+   `toc_strip_signatures = true` in its `[extra]` front matter, the "On This
+   Page" sidebar shows just the part before the first `=` (the field name),
+   leaving headings that contain no `=` unchanged. Opt-in per page so that
+   signatures elsewhere (e.g. CLI examples containing `=`) are left intact.
+   The headings themselves and their `{#anchor}` IDs are unaffected — this only
+   changes the sidebar's displayed text. #}
+{% macro toc(page, lang, config, config_file=false) %}
+{% if page.toc %}
+{% set strip_sig = page.extra.toc_strip_signatures | default(value=false) %}
+<div class="hidden lg:block" {% if page.extra.toc_expand %}data-toc-expand="true"{% endif %}>
+    <div class="sticky top-20 px-4 py-2 border-l border-gray-500/15">
+        <h4 class="text-lg font-bold mb-1">{{ utils::trans_or_default(key="toc_title", default="ON THIS PAGE", lang=lang, config=config, config_file=config_file) }}</h4>
+            <ul class="menu menu-sm toc-menu">
+            {% for h1 in page.toc %}
+                <li>
+                    {% if h1.children %}
+                    <details class="toc-details" {% if page.extra.toc_expand %}open{% endif %}>
+                        <summary>
+                            <a href="{{ h1.permalink | safe }}" class="toc-link">{% if strip_sig %}{{ h1.title | split(pat="=") | first | trim }}{% else %}{{ h1.title }}{% endif %}</a>
+                        </summary>
+                        <ul>
+                            {% for h2 in h1.children %}
+                                <li>
+                                    <a href="{{ h2.permalink | safe }}" class="toc-link">{% if strip_sig %}{{ h2.title | split(pat="=") | first | trim }}{% else %}{{ h2.title }}{% endif %}</a>
+                                </li>
+                            {% endfor %}
+                        </ul>
+                    </details>
+                    {% else %}
+                    <a href="{{ h1.permalink | safe }}" class="toc-link">{% if strip_sig %}{{ h1.title | split(pat="=") | first | trim }}{% else %}{{ h1.title }}{% endif %}</a>
+                    {% endif %}
+                </li>
+            {% endfor %}
+            </ul>
+    </div>
+</div>
+{% endif %}
+{% endmacro toc %}
