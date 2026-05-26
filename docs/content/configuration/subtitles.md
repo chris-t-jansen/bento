@@ -69,7 +69,7 @@ Warn when a track is processed as ASS but emitted as SRT. Default `true`. The co
 A list of output subtitle tracks. Each entry describes one track.
 
 - **`source = <integer> | <path>`**
-    - Source track index in the input file (1-based), or a path to an external subtitle file. Multiple output tracks can share a source. Required. When a string, Bento reads from that file instead of extracting from the source video; paths resolve relative to the config file that contains them, not CWD. Supported extensions: `.srt`, `.ass`, `.ssa`.
+    - Source track index in the input file — 1-based and type-relative, counting subtitle streams only — or a path to an external subtitle file. Multiple output tracks can share a source. Required. When a string, Bento reads from that file instead of extracting from the source video; paths resolve relative to the config file that contains them, not CWD. Supported extensions: `.srt`, `.ass`, `.ssa`.
 - **`format = <option>`**
     - Output format: `"srt"` or `"ass"`. For soft tracks, this is the muxed stream format. If the input is ASS and `format = "srt"`, the conversion is lossy — styling is stripped.
 - **`mux = <option>`**

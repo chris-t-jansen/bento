@@ -94,7 +94,7 @@ Source bitrate below target never triggers a transcode regardless of this flag â
 A list of output audio tracks. Each entry describes one track.
 
 - **`source = <integer>`**
-    - Source audio track index in the input file (1-based). Required.
+    - Source audio track index in the input file. 1-based and type-relative â€” it counts audio streams only, so the first audio track is `source = 1` regardless of its overall stream index. Required.
 - **`lang = <string>`**
     - ISO 639 language code (e.g. `"jpn"`, `"eng"`). Strongly recommended for Jellyfin track selection.
 - **`title = <string>`**
