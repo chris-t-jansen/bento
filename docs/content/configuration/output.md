@@ -2,6 +2,9 @@
 title = "Output"
 description = "Container format, destination, filename templating, conflict resolution, and embedded metadata."
 weight = 2
+
+[extra]
+toc_strip_signatures = true
 +++
 
 The `[output]` section controls everything about the output file that isn't a stream encoding decision: where files go, what they're named, what metadata is embedded, and what happens if the output already exists.
@@ -25,58 +28,55 @@ naming = {
 
 ## Fields
 
-### `container`
+### `container = <option>` {#container}
 
-The output container format.
+The output container format. Default `"mp4"`.
 
-| Value | Notes |
-|---|---|
-| `"mp4"` (default) | Maximizes Jellyfin direct-play compatibility, especially on Raspberry Pi clients. |
-| `"mkv"` | Supports more subtitle formats natively (e.g. soft ASS), but narrows the direct-play client set. |
+- **`"mp4"`** — Maximizes Jellyfin direct-play compatibility, especially on Raspberry Pi clients.
+- **`"mkv"`** — Supports more subtitle formats natively (e.g. soft ASS), but narrows the direct-play client set.
 
-### `destination`
+### `destination = <string>` {#destination}
 
 Where output files are written. Default `"."` (alongside the source).
 
 Relative paths resolve against **the source file's directory**, not the working directory. `destination = "encoded"` puts each output file in an `encoded/` subdirectory next to its input. Bento creates the directory if it doesn't exist. Absolute paths are used as-is.
 
-### `preserve_chapters`
+### `preserve_chapters = <bool>` {#preserve_chapters}
 
 Whether to copy chapter markers from the source to the output. Default `true`.
 
-### `on_existing`
+### `on_existing = <option>` {#on_existing}
 
-What to do when the target output file already exists:
+What to do when the target output file already exists. Default `"warn"`.
 
-| Value | Behavior |
-|---|---|
-| `"warn"` (default) | Print a warning, leave the existing file in place, continue with the next file. |
-| `"skip_silently"` | Leave the existing file in place silently, continue. |
-| `"overwrite"` | Replace the existing file without warning. |
-| `"fail"` | Abort the entire run. |
+- **`"warn"`** — Print a warning, leave the existing file in place, continue with the next file.
+- **`"skip_silently"`** — Leave the existing file in place silently, continue.
+- **`"overwrite"`** — Replace the existing file without warning.
+- **`"fail"`** — Abort the entire run.
 
-The `--overwrite` / `-f` CLI flag and `--on-existing=VALUE` override this per-run. See [Flags](/cli/flags).
+The `--overwrite` / `-f` CLI flag and `--on-existing=VALUE` override this per-run. See [Flags](@/cli/flags.md).
 
-### `metadata`
+### `metadata = <inline table>` {#metadata}
 
-An inline table of tags embedded in the output container. All fields are optional; absent fields are not written.
+Tags embedded in the output container. All fields are optional; absent fields are not written.
 
-| Field | Type | Description |
-|---|---|---|
-| `show` | string | Series title |
-| `season` | integer | Season number |
-| `year` | integer | Release year |
+- **`show = <string>`**
+    - Series title.
+- **`season = <integer>`**
+    - Season number.
+- **`year = <integer>`**
+    - Release year.
 
 These map to standard container tags that Jellyfin uses to corroborate filename-based scraping. For richer tagging, post-process with `mkvpropedit` or `AtomicParsley`.
 
-### `naming`
+### `naming = <inline table>` {#naming}
 
-An optional inline table controlling output filenames. If absent, output filenames mirror source filenames with the extension changed to match `container`.
+Controls output filenames. If absent, output filenames mirror source filenames with the extension changed to match `container`.
 
-| Field | Description |
-|---|---|
-| `regex` | A regular expression matched against each source filename (without extension). Named captures become template variables. If set and fails to match a file, that file errors at encode time. |
-| `template` | The output filename (without extension). References variables as `{name}`. Format specifiers like `{name:02}` (zero-padded integer) work on integer-typed values. |
+- **`regex = <string>`**
+    - A regular expression matched against each source filename (without extension). Named captures become template variables. If set and fails to match a file, that file errors at encode time.
+- **`template = <string>`**
+    - The output filename (without extension). References variables as `{name}`. Format specifiers like `{name:02}` (zero-padded integer) work on integer-typed values.
 
 **Available template variables:**
 
@@ -87,7 +87,7 @@ An optional inline table controlling output filenames. If absent, output filenam
 
 **Auto-derived episode numbers.** When `naming.regex` includes a capture named `episode` or `ep`, Bento embeds it as the episode number tag in the output container. Other capture names are template-only and are not embedded.
 
-## Example
+## Examples
 
 ```toml
 [output]
