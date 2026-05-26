@@ -80,7 +80,7 @@ preserve_chapters = true
 on_existing = "warn"
 metadata = { show = "Cowboy Bebop", season = 1, year = 1998 }
 naming = {
-    regex = 'S(?P<s>\d+)E(?P<episode>\d+)',
+    regex = 'S(?<s>\d+)E(?<episode>\d+)',
     template = "{show} - S{s:02}E{episode:02}",
 }
 ```
