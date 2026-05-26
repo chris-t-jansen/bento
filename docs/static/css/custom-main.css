@@ -1,4 +1,14 @@
 /*
+ * Fix descender clipping on h1 page titles.
+ * The theme uses background-clip: text with line-height: 1.1, which clips the
+ * gradient box so tightly that descenders (g, y, p, etc.) are cut off.
+ * padding-bottom extends the clip region downward without affecting line spacing.
+ */
+h1 {
+    padding-bottom: 0.15em;
+}
+
+/*
  * Theme overrides for Bento docs.
  *
  * These rules target daisyUI's CSS custom properties scoped to each theme.
