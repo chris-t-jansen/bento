@@ -1,4 +1,40 @@
 /*
+ * Round list bullets: replace the default sharp triangle (▶) with CSS-rendered
+ * circles. Using empty content + explicit dimensions ensures consistent rendering
+ * across fonts and platforms. currentColor picks up the existing text-primary
+ * color from the theme without any extra specificity gymnastics.
+ *
+ * Three levels of visual differentiation:
+ *   1st level  — filled disc
+ *   2nd level  — hollow ring (same size, transparent fill + border)
+ *   3rd level+ — small filled disc (visually recedes)
+ */
+main ul li::before {
+    content: "";
+    display: block;
+    width: 0.55em;
+    height: 0.55em;
+    border-radius: 50%;
+    background-color: currentColor;
+    border: none;
+    font-size: inherit;
+    top: 0.625em; /* (line-height 1.8 / 2) - (height 0.55 / 2) centers on first line */
+}
+
+main ul ul li::before {
+    background-color: transparent;
+    border: 1.5px solid currentColor;
+}
+
+main ul ul ul li::before {
+    background-color: currentColor;
+    border: none;
+    width: 0.4em;
+    height: 0.4em;
+    top: 0.7em; /* re-center smaller disc */
+}
+
+/*
  * Fix descender clipping on h1 page titles.
  * The theme uses background-clip: text with line-height: 1.1, which clips the
  * gradient box so tightly that descenders (g, y, p, etc.) are cut off.
