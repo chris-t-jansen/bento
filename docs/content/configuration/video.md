@@ -1,10 +1,29 @@
 +++
-title = "[video]"
+title = "Video"
 description = "Encoder choice, CRF, presets, and source preprocessing — crop, deinterlace, detelecine, denoise, resize."
-weight = 2
+weight = 3
 +++
 
 The `[video]` section governs the single video stream. Unlike `[audio]` and `[subtitles]`, there is no track list — one video stream in, one video stream out. All fields are optional and resolve from the layer cascade.
+
+```
+[video]
+encoder = {
+    name = "x264" | "x265"
+    crf  = <integer>
+    tune = "animation" | "film" | "grain" | "stillimage" | "psnr" | "ssim" | "fastdecode" | "zerolatency" | "none"
+}
+preset      = "ultrafast" | "superfast" | "veryfast" | "faster" | "fast" | "medium" | "slow" | "slower" | "veryslow" | "placebo"
+crop          = "none" | "auto" | { top = <integer>, bottom = <integer>, left = <integer>, right = <integer> }
+deinterlace   = "none" | "yadif" | "bwdif" | "auto"
+detelecine    = "none" | "auto"
+denoise       = "none" | {
+    filter = "nlmeans" | "hqdn3d"
+    preset = "ultralight" | "light" | "medium" | "strong" | "stronger" | "verystrong"
+}
+resolution    = "original" | { width = <integer>, height = <integer> }
+never_upscale = <bool>
+```
 
 ## Encoding
 

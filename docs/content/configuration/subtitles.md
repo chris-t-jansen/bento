@@ -1,10 +1,40 @@
 +++
-title = "[subtitles]"
+title = "Subtitles"
 description = "Soft mux, burn-in, external sidecars, ASS style filtering, and track subtraction."
-weight = 4
+weight = 5
 +++
 
 The `[subtitles]` section configures all subtitle output. Each track in the `tracks` list independently specifies its source, how it's derived, and how it appears in the output. Unlike `[audio]`, there are no section-level per-track defaults — every track is fully self-contained.
+
+```
+[subtitles]
+warn_multiple_burns  = <bool>
+warn_burn_metadata   = <bool>
+warn_no_default      = <bool>
+warn_ass_to_srt      = <bool>
+
+tracks = [
+    {
+        source           = <integer> | <string>
+        format           = "srt" | "ass"
+        mux              = "soft" | "burn" | "external"
+        subtract_track   = <integer> | <string>    # mutually exclusive with filter
+        filter = {
+            style = <string>
+            font  = <string>
+            size  = <integer>
+            mode  = "retain" | "remove"
+        }
+        lang             = <string>
+        title            = <string>
+        default          = <bool>
+        forced           = <bool>
+        commentary       = <bool>
+        hearing_impaired = <bool>
+    },
+    ...
+]
+```
 
 ## Section-only fields
 

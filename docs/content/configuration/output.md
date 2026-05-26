@@ -1,10 +1,27 @@
 +++
-title = "[output]"
+title = "Output"
 description = "Container format, destination, filename templating, conflict resolution, and embedded metadata."
-weight = 1
+weight = 2
 +++
 
 The `[output]` section controls everything about the output file that isn't a stream encoding decision: where files go, what they're named, what metadata is embedded, and what happens if the output already exists.
+
+```
+[output]
+container         = "mp4" | "mkv"
+destination       = <string>
+preserve_chapters = <bool>
+on_existing       = "warn" | "skip_silently" | "overwrite" | "fail"
+metadata = {
+    show   = <string>
+    season = <integer>
+    year   = <integer>
+}
+naming = {
+    regex    = <string>
+    template = <string>
+}
+```
 
 ## Fields
 
