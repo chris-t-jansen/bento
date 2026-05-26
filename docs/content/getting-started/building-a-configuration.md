@@ -4,7 +4,7 @@ description = "How to inspect your source files and write a bento.toml for your 
 weight = 4
 +++
 
-[Your First Encode](/getting-started/encoding-example) used a fixed scenario with prescribed settings. This page covers how to build a `bento.toml` for your own files: inspect the source, identify what you have, and translate that into config.
+[Your First Encode](@/getting-started/encoding-example.md) used a fixed scenario with prescribed settings. This page covers how to build a `bento.toml` for your own files: inspect the source, identify what you have, and translate that into config.
 
 ## Inspect the source file
 
@@ -59,9 +59,9 @@ Run the same command on a few different episodes before writing the config — s
 
 Most modern Blu-ray rips need no preprocessing. Start with nothing and add only what the source requires.
 
-**Black bars (crop):** If the source has letterbox or pillarbox bars, set `crop`. You can measure bars by pausing at a non-dark frame, or use `crop = "auto"` to have ffmpeg detect them from a sample of frames — convenient but unreliable on dark scenes. See the [`[video]` reference](/configuration/video) for explicit pixel syntax.
+**Black bars (crop):** If the source has letterbox or pillarbox bars, set `crop`. You can measure bars by pausing at a non-dark frame, or use `crop = "auto"` to have ffmpeg detect them from a sample of frames — convenient but unreliable on dark scenes. See the [`[video]` reference](@/configuration/video.md) for explicit pixel syntax.
 
-**Interlacing vs. telecine:** Pause the source during fast motion and look for combing artifacts — horizontal lines of alternating rows blending together. If combing appears on *every* frame, the source is interlaced — use `deinterlace`. If combing appears on roughly 2 of every 5 frames in a regular alternating pattern, the source was telecined — use `detelecine`. These are mutually exclusive. Applying the wrong one corrupts the output. The [`[video]` reference](/configuration/video) covers the distinction in detail.
+**Interlacing vs. telecine:** Pause the source during fast motion and look for combing artifacts — horizontal lines of alternating rows blending together. If combing appears on *every* frame, the source is interlaced — use `deinterlace`. If combing appears on roughly 2 of every 5 frames in a regular alternating pattern, the source was telecined — use `detelecine`. These are mutually exclusive. Applying the wrong one corrupts the output. The [`[video]` reference](@/configuration/video.md) covers the distinction in detail.
 
 **Era heuristic for anime:** Blu-ray-era anime is almost always progressive 23.976fps and needs no preprocessing. Pre-Blu-ray broadcast and older DVDs are often telecined.
 
@@ -81,7 +81,7 @@ tracks = [
 ]
 ```
 
-Bento decides automatically whether to copy or re-encode each stream. If a track already matches your configured codec and channel layout, Bento copies it without touching quality. If it doesn't match — DTS 5.1 source with a stereo AAC target, for example — Bento transcodes it and applies loudness normalization for the surround-to-stereo downmix. See the [`[audio]` reference](/configuration/audio) for the copy-vs.-transcode decision rules.
+Bento decides automatically whether to copy or re-encode each stream. If a track already matches your configured codec and channel layout, Bento copies it without touching quality. If it doesn't match — DTS 5.1 source with a stereo AAC target, for example — Bento transcodes it and applies loudness normalization for the surround-to-stereo downmix. See the [`[audio]` reference](@/configuration/audio.md) for the copy-vs.-transcode decision rules.
 
 Mark exactly one track `default = true`. Without a default track, Jellyfin falls back to its own selection logic.
 
@@ -134,7 +134,7 @@ Both tracks derive from the same source. `retain` keeps dialogue for soft-mux; `
 
 **No subtitles.** Omit the `[subtitles]` section entirely.
 
-Converting ASS to SRT (`format = "srt"`) is lossy — styling and positioning are stripped. This is fine for spoken dialogue but not for styled signs. Burn tracks always use ASS internally regardless of the `format` field. See the [`[subtitles]` reference](/configuration/subtitles) for the full set of options.
+Converting ASS to SRT (`format = "srt"`) is lossy — styling and positioning are stripped. This is fine for spoken dialogue but not for styled signs. Burn tracks always use ASS internally regardless of the `format` field. See the [`[subtitles]` reference](@/configuration/subtitles.md) for the full set of options.
 
 ## Output: container, naming, destination
 
@@ -153,7 +153,7 @@ naming = {
 
 `destination` resolves relative to the source directory. `"encoded"` puts output in an `encoded/` subdirectory next to the source files; Bento creates it if it doesn't exist.
 
-`naming` is optional. Without it, output filenames mirror source filenames with the extension changed to match `container`. With it, `regex` extracts named captures from each source filename (without extension), and `template` uses them to build the output filename. If the regex fails to match a file, that file errors at encode time. See the [`[output]` reference](/configuration/output) for the full template variable list.
+`naming` is optional. Without it, output filenames mirror source filenames with the extension changed to match `container`. With it, `regex` extracts named captures from each source filename (without extension), and `template` uses them to build the output filename. If the regex fails to match a file, that file errors at encode time. See the [`[output]` reference](@/configuration/output.md) for the full template variable list.
 
 ## Validate before encoding
 

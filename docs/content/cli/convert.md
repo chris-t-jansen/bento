@@ -88,12 +88,12 @@ Override `[output].on_existing` for this run. Values: `warn`, `skip-silently`, `
 
 ### `--set KEY=VALUE`
 
-Override a config field at any dotted path. See [CLI Reference](/cli) for semantics.
+Override a config field at any dotted path. See [CLI Reference](@/cli/_index.md) for semantics.
 
 ### Warning suppression
 
-See [Flags](/cli/flags) for the full `--no-warn-*` and `--no-warnings` reference.
+See [Flags](@/cli/flags.md) for the full `--no-warn-*` and `--no-warnings` reference.
 
 ### Verbosity
 
-`--verbose` / `-v` and `--quiet` / `-q`. See [Flags](/cli/flags).
+`--verbose` / `-v` and `--quiet` / `-q`. See [Flags](@/cli/flags.md).

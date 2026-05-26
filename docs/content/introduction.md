@@ -8,8 +8,8 @@ Bento is a configuration-driven CLI for converting and re-encoding video files f
 
 ## Documentation overview
 
-**[Getting Started](/getting-started)** — Install Bento, follow a complete encoding walkthrough, and learn how to build a `bento.toml` for your own files.
+**[Getting Started](@/getting-started/_index.md)** — Install Bento, follow a complete encoding walkthrough, and learn how to build a `bento.toml` for your own files.
 
-**[Configuration](/configuration)** — Full reference for every setting across the four config sections: `[output]`, `[video]`, `[audio]`, and `[subtitles]`.
+**[Configuration](@/configuration/_index.md)** — Full reference for every setting across the four config sections: `[output]`, `[video]`, `[audio]`, and `[subtitles]`.
 
-**[CLI Reference](/cli)** — Subcommands, flags, the `--set` override mechanism, and verbosity and warning controls.
+**[CLI Reference](@/cli/_index.md)** — Subcommands, flags, the `--set` override mechanism, and verbosity and warning controls.

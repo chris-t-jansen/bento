@@ -42,4 +42,4 @@ bento check
 
 Confirms `ffmpeg` is present and at a supported version, and generates your global config at `~/.config/bento/config.toml` (Linux/macOS) or `%APPDATA%\bento\config.toml` (Windows) if it doesn't exist yet. If `ffmpeg` is missing, Bento prints platform-appropriate install hints.
 
-See [`bento check`](/cli/check) for the full reference.
+See [`bento check`](@/cli/check.md) for the full reference.

@@ -4,7 +4,7 @@ description = "A complete walkthrough from source files to finished output."
 weight = 3
 +++
 
-This page walks through a complete encode from start to finish using a specific example so there's something concrete to follow. Everything is prescribed. For the general process of inspecting your own source files and building a config from scratch, continue to [Building a Configuration](/getting-started/building-a-configuration).
+This page walks through a complete encode from start to finish using a specific example so there's something concrete to follow. Everything is prescribed. For the general process of inspecting your own source files and building a config from scratch, continue to [Building a Configuration](@/getting-started/building-a-configuration.md).
 
 ## The scenario
 
@@ -75,7 +75,7 @@ tracks = [
 ]
 ```
 
-`[subtitles]` derives a spoken-dialogue SRT by removing any events whose timestamps exactly match an event in the signs track (`subtract_track = 2`), then soft-muxes it into the container. The signs track is burned onto the video stream via libass. This two-track layout is common for Blu-ray releases, but your source may be structured differently — [Building a Configuration](/getting-started/building-a-configuration) covers the other common patterns.
+`[subtitles]` derives a spoken-dialogue SRT by removing any events whose timestamps exactly match an event in the signs track (`subtract_track = 2`), then soft-muxes it into the container. The signs track is burned onto the video stream via libass. This two-track layout is common for Blu-ray releases, but your source may be structured differently — [Building a Configuration](@/getting-started/building-a-configuration.md) covers the other common patterns.
 
 Video encoding settings — encoder, CRF, preset — are not set here and fall through to the global config.
 
