@@ -1,10 +1,41 @@
 +++
-title = "[audio]"
+title = "Audio"
 description = "Codec, bitrate, mixdown, loudness normalization, and per-track configuration."
-weight = 3
+weight = 4
 +++
 
 The `[audio]` section configures all audio output. It has two levels: section-level fields that act as per-track defaults, and a `tracks` list that describes each output track. Settings at the section level cascade to every track that doesn't override them individually.
+
+```
+[audio]
+encoder          = "aac" | "opus" | "flac"
+bitrate          = <integer>
+mixdown          = "stereo" | "5point1" | "mono" | "dpl2"
+force_mixdown    = <bool>
+force_bitrate    = <bool>
+normalize_mix    = <bool>
+warn_no_default  = <bool>
+
+tracks = [
+    {
+        source           = <integer>
+        lang             = <string>
+        title            = <string>
+        default          = <bool>
+        forced           = <bool>
+        original         = <bool>
+        commentary       = <bool>
+        hearing_impaired = <bool>
+        visual_impaired  = <bool>
+        encoder          = "aac" | "opus" | "flac"    # overrides section default
+        bitrate          = <integer>                   # overrides section default
+        mixdown          = "stereo" | "5point1" | "mono" | "dpl2"  # overrides section default
+        force_bitrate    = <bool>         # overrides section default
+        force_mixdown    = <bool>         # overrides section default
+    },
+    ...
+]
+```
 
 ## Section-level fields (per-track defaults)
 

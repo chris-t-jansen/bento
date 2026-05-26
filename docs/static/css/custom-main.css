@@ -9,36 +9,28 @@ h1 {
 }
 
 /*
- * Theme overrides for Bento docs.
+ * Quick reference code blocks (no language specifier) scroll horizontally
+ * rather than wrapping. Two changes are required:
  *
- * These rules target daisyUI's CSS custom properties scoped to each theme.
- * Only list values you actually want to change — everything else inherits
- * from the built-in synthwave / retro theme as normal.
+ * 1. main.prose is a grid item in the theme's 1fr/250px layout. Grid items
+ *    default to min-width: auto, which lets them expand past the column
+ *    boundary — without this, overflow on child elements may not constrain
+ *    the layout correctly.
  *
- * daisyUI colour values use OKLCH: oklch(<lightness%> <chroma> <hue>)
- * A handy picker: https://oklch.com
- *
- * To find the property names for anything else you want to override, open
- * DevTools, inspect an element, and look for --color-* or other CSS vars
- * on the <html data-theme="..."> element.
+ * 2. The theme sets whitespace-pre-wrap on all pre code elements. Making code
+ *    a block-level scroll container (rather than letting pre scroll) keeps
+ *    pre's ::before decorative bar and the injected Copy button in place —
+ *    both are position: absolute inside pre, and if pre were the scroll
+ *    container they would scroll with the content.
  */
-
-[data-theme="synthwave"] {
-    --color-primary: rgb(255 140 80);
-    --color-primary-content: oklch(39% 0.141 25.723);
-    --color-secondary: rgb(255 200 73);
-    --color-secondary-content: oklch(55% 0.135 66.442);
-    --color-accent: rgb(95 207 189);
-    --color-accent-content: oklch(43% 0.095 166.913);
+main.prose {
+    min-width: 0;
 }
 
-[data-theme="retro"] {
-    --color-primary: rgb(255 140 80);
-    --color-primary-content: oklch(39% 0.141 25.723);
-    --color-secondary: rgb(255 200 73);
-    --color-secondary-content: oklch(55% 0.135 66.442);
-    --color-accent: rgb(95 207 189);
-    --color-accent-content: oklch(43% 0.095 166.913);
-    --color-neutral: oklch(37% 0.01 67.558);
-    --color-neutral-content: oklch(86% 0.005 56.366);
+pre code:not([data-lang]) {
+    display: block;
+    overflow-x: auto;
+    white-space: pre;
+    margin: -1.5rem;   /* pull out to pre's padding edges (pre uses p-6 = 1.5rem) */
+    padding: 1.5rem;   /* restore visual inset so text isn't flush with the border */
 }
