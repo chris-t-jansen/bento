@@ -57,6 +57,20 @@ pub struct ConvertOptions {
     pub set_overrides: Vec<String>,
 }
 
+/// Per-run context shared across all file-level pipeline calls. Bundles the
+/// run-level settings so `run_convert_file` and `run_convert_directory` don't
+/// need long positional argument lists.
+#[derive(Clone, Copy)]
+struct ConvertContext<'a> {
+    cli_config: &'a Config,
+    output_dir_override: Option<&'a Path>,
+    dry_run: bool,
+    verbosity: Verbosity,
+    warn_flags: WarnFlags,
+    /// `None` iff `dry_run` (no temp dir is created for dry runs).
+    temp_root: Option<&'a Path>,
+}
+
 pub const VIDEO_EXTENSIONS: &[&str] = &[
     "mkv", "mp4", "m4v", "avi", "mov", "webm", "ts", "m2ts", "wmv",
 ];
@@ -139,34 +153,23 @@ pub fn run_convert(input: &Path, out: &mut dyn Write, opts: ConvertOptions) -> R
     };
     let temp_root: Option<&Path> = temp_dir.as_ref().map(|d| d.path());
 
+    let ctx = ConvertContext {
+        cli_config: &cli_config,
+        output_dir_override,
+        dry_run,
+        verbosity,
+        warn_flags,
+        temp_root,
+    };
+
     let run_result = if input.is_dir() {
-        run_convert_directory(
-            input,
-            output_dir_override,
-            &cli_config,
-            dry_run,
-            verbosity,
-            warn_flags,
-            temp_root,
-            out,
-        )
+        run_convert_directory(input, &ctx, out)
     } else {
         // Single-file: print a unified header, run, then always print the summary.
         let input_dir = input.parent().unwrap_or_else(|| Path::new("."));
         print_convert_header(input_dir, &[input.to_path_buf()], dry_run, out)?;
 
-        let result = run_convert_file(
-            input,
-            1,
-            1,
-            output_dir_override,
-            &cli_config,
-            dry_run,
-            verbosity,
-            warn_flags,
-            temp_root,
-            out,
-        );
+        let result = run_convert_file(input, 1, 1, &ctx, out);
 
         // FfmpegNotFound is an environmental error — skip the per-run summary
         // since every remaining file would fail the same way.
@@ -201,18 +204,14 @@ pub fn run_convert(input: &Path, out: &mut dyn Write, opts: ConvertOptions) -> R
     run_result
 }
 
-// TODO: refactor — too many arguments. Tracked in ROADMAP.md.
-#[allow(clippy::too_many_arguments)]
 fn run_convert_directory(
     input_dir: &Path,
-    output_dir_override: Option<&Path>,
-    cli_config: &Config,
-    dry_run: bool,
-    verbosity: Verbosity,
-    warn_flags: WarnFlags,
-    temp_root: Option<&Path>,
+    ctx: &ConvertContext<'_>,
     out: &mut dyn Write,
 ) -> Result<()> {
+    let ConvertContext {
+        dry_run, verbosity, ..
+    } = *ctx;
     let mut files: Vec<PathBuf> = std::fs::read_dir(input_dir)
         .map_err(|e| Error::Io {
             path: input_dir.to_path_buf(),
@@ -237,18 +236,7 @@ fn run_convert_directory(
     let mut failed: Vec<(PathBuf, String)> = Vec::new();
 
     for (idx, file) in files.iter().enumerate() {
-        match run_convert_file(
-            file,
-            idx + 1,
-            file_count,
-            output_dir_override,
-            cli_config,
-            dry_run,
-            verbosity,
-            warn_flags,
-            temp_root,
-            out,
-        ) {
+        match run_convert_file(file, idx + 1, file_count, ctx, out) {
             Ok(()) => succeeded.push(file.clone()),
             Err(e) => {
                 if matches!(e, Error::FfmpegNotFound) {
@@ -278,20 +266,21 @@ fn run_convert_directory(
     Ok(())
 }
 
-// TODO: refactor — too many arguments. Tracked in ROADMAP.md.
-#[allow(clippy::too_many_arguments)]
 fn run_convert_file(
     input: &Path,
     file_idx: usize,
     file_count: usize,
-    output_dir_override: Option<&Path>,
-    cli_config: &Config,
-    dry_run: bool,
-    verbosity: Verbosity,
-    warn_flags: WarnFlags,
-    temp_root: Option<&Path>, // None iff dry_run
+    ctx: &ConvertContext<'_>,
     out: &mut dyn Write,
 ) -> Result<()> {
+    let ConvertContext {
+        cli_config,
+        output_dir_override,
+        dry_run,
+        verbosity,
+        warn_flags,
+        temp_root,
+    } = *ctx;
     use crate::resolve::Layer;
 
     // input_name is used in the layer-count summary and throughout; compute early.
