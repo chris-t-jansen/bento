@@ -154,7 +154,7 @@ encoder = "aac"
 # the source stream.
 bitrate = 192
 
-# Channel layout: "stereo" "5point1" "mono"
+# Channel layout: "stereo" "5point1" "mono" "dpl2"
 mixdown = "stereo"
 
 # When true, transcode if source bitrate exceeds `bitrate`. Default false:

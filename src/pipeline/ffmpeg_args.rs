@@ -17,6 +17,7 @@ pub enum AudioAction {
         encoder: String,
         bitrate_kbps: u32,
         channels: u32,
+        use_dpl2: bool,
     },
 }
 
@@ -51,12 +52,14 @@ pub fn decide_audio_action(
         .unwrap_or(false);
     let mixdown = track.mixdown.or(section.mixdown).unwrap_or(Mixdown::Stereo);
     let target_channels = mixdown_to_channels(mixdown);
+    let use_dpl2 = matches!(mixdown, Mixdown::Dpl2);
 
     if normalize_mix || force_bitrate || force_mixdown {
         return AudioAction::Transcode {
             encoder: audio_encoder_to_ffmpeg(encoder).to_string(),
             bitrate_kbps: target_bitrate,
             channels: target_channels,
+            use_dpl2,
         };
     }
 
@@ -74,6 +77,7 @@ pub fn decide_audio_action(
             encoder: audio_encoder_to_ffmpeg(encoder).to_string(),
             bitrate_kbps: target_bitrate,
             channels: target_channels,
+            use_dpl2,
         }
     }
 }
@@ -186,22 +190,24 @@ pub fn build_ffmpeg_args(
 
             let action = stream_info
                 .map(|src| decide_audio_action(track, &config.audio, src, normalize_mix))
-                .unwrap_or_else(|| AudioAction::Transcode {
-                    encoder: audio_encoder_to_ffmpeg(
-                        track
-                            .encoder
-                            .as_deref()
-                            .or(config.audio.encoder.as_deref())
-                            .unwrap_or("aac"),
-                    )
-                    .to_string(),
-                    bitrate_kbps: track.bitrate.or(config.audio.bitrate).unwrap_or(192),
-                    channels: mixdown_to_channels(
-                        track
-                            .mixdown
-                            .or(config.audio.mixdown)
-                            .unwrap_or(Mixdown::Stereo),
-                    ),
+                .unwrap_or_else(|| {
+                    let mixdown = track
+                        .mixdown
+                        .or(config.audio.mixdown)
+                        .unwrap_or(Mixdown::Stereo);
+                    AudioAction::Transcode {
+                        encoder: audio_encoder_to_ffmpeg(
+                            track
+                                .encoder
+                                .as_deref()
+                                .or(config.audio.encoder.as_deref())
+                                .unwrap_or("aac"),
+                        )
+                        .to_string(),
+                        bitrate_kbps: track.bitrate.or(config.audio.bitrate).unwrap_or(192),
+                        channels: mixdown_to_channels(mixdown),
+                        use_dpl2: matches!(mixdown, Mixdown::Dpl2),
+                    }
                 });
 
             match &action {
@@ -213,6 +219,7 @@ pub fn build_ffmpeg_args(
                     encoder,
                     bitrate_kbps,
                     channels,
+                    use_dpl2,
                 } => {
                     args.push(format!("-c:a:{}", i));
                     args.push(encoder.clone());
@@ -221,9 +228,16 @@ pub fn build_ffmpeg_args(
                     args.push(format!("-ac:{}", i));
                     args.push(channels.to_string());
 
+                    let mut filters: Vec<&str> = Vec::new();
                     if normalize_mix {
+                        filters.push("loudnorm=I=-16:TP=-1.5:LRA=11");
+                    }
+                    if *use_dpl2 {
+                        filters.push("aresample=matrix_encoding=dplii");
+                    }
+                    if !filters.is_empty() {
                         args.push(format!("-filter:a:{}", i));
-                        args.push("loudnorm=I=-16:TP=-1.5:LRA=11".into());
+                        args.push(filters.join(","));
                     }
                 }
             }
@@ -460,7 +474,7 @@ fn soft_subtitle_codec(format: SourceFormat, container: Container) -> &'static s
 pub fn mixdown_to_channels(mixdown: Mixdown) -> u32 {
     match mixdown {
         Mixdown::Mono => 1,
-        Mixdown::Stereo => 2,
+        Mixdown::Stereo | Mixdown::Dpl2 => 2,
         Mixdown::FivePointOne => 6,
     }
 }

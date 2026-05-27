@@ -28,6 +28,8 @@ pub enum Mixdown {
     FivePointOne,
     #[serde(rename = "mono")]
     Mono,
+    #[serde(rename = "dpl2")]
+    Dpl2,
 }
 
 #[derive(Debug, Default, Clone, Deserialize, Serialize, PartialEq)]
@@ -112,6 +114,7 @@ tracks = [
             ("stereo", Mixdown::Stereo),
             ("5point1", Mixdown::FivePointOne),
             ("mono", Mixdown::Mono),
+            ("dpl2", Mixdown::Dpl2),
         ] {
             let toml_str = format!("[audio]\nmixdown = \"{}\"\n", s);
             let a = Config::from_toml_str(&toml_str).expect("mixdown parses");
