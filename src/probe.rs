@@ -6,7 +6,9 @@ use std::path::Path;
 use console::style;
 
 use crate::error::{Error, Result};
-use crate::pipeline::probe::{AudioStreamInfo, SourceProbe, SubtitleStreamInfo, probe_source_streams};
+use crate::pipeline::probe::{
+    AudioStreamInfo, SourceProbe, SubtitleStreamInfo, probe_source_streams,
+};
 
 pub fn run_probe(path: &Path, out: &mut dyn Write) -> Result<()> {
     if !path.exists() {
@@ -45,10 +47,18 @@ fn render(probe: &SourceProbe, path: &Path, out: &mut dyn Write) -> std::io::Res
         writeln!(out, "  {}", style("Video").red().bold())?;
         write!(out, "    {}", friendly_video_codec(&v.codec))?;
         if v.width > 0 && v.height > 0 {
-            write!(out, "   {}", style(format!("{} × {}", v.width, v.height)).dim())?;
+            write!(
+                out,
+                "   {}",
+                style(format!("{} × {}", v.width, v.height)).dim()
+            )?;
         }
         if let Some(ref fps_str) = v.r_frame_rate {
-            write!(out, "   {}", style(format!("{} fps", format_framerate(fps_str))).dim())?;
+            write!(
+                out,
+                "   {}",
+                style(format!("{} fps", format_framerate(fps_str))).dim()
+            )?;
         }
         writeln!(out)?;
         writeln!(out)?;
@@ -145,7 +155,10 @@ fn write_audio_row(
     write!(out, "   {codec:<codec_w$}")?;
 
     // Channel layout — technical detail, dimmed; padded so bitrate column aligns
-    let layout = format!("{:<layout_w$}", format_audio_layout(track.channels, track.channel_layout.as_deref()));
+    let layout = format!(
+        "{:<layout_w$}",
+        format_audio_layout(track.channels, track.channel_layout.as_deref())
+    );
     write!(out, "   {}", style(&layout).dim())?;
 
     // Bitrate — optional, dimmed
@@ -243,7 +256,7 @@ fn format_audio_layout(channels: u32, layout: Option<&str>) -> String {
             "quad" => Some("4.0"),
             _ => None,
         })
-        .or_else(|| match channels {
+        .or(match channels {
             1 => Some("mono"),
             2 => Some("stereo"),
             6 => Some("5.1"),
@@ -314,7 +327,9 @@ fn friendly_sub_codec(codec: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pipeline::probe::{AudioStreamInfo, SourceProbe, SubtitleStreamInfo, VideoStreamInfo};
+    use crate::pipeline::probe::{
+        AudioStreamInfo, SourceProbe, SubtitleStreamInfo, VideoStreamInfo,
+    };
 
     #[test]
     fn format_duration_under_one_hour() {
@@ -414,7 +429,10 @@ mod tests {
         assert!(output.contains("DTS"), "friendly audio codec");
         assert!(output.contains("\"English DTS\""), "audio title");
         assert!(output.contains("Subtitles"), "subtitles section header");
-        assert!(output.contains("SRT"), "friendly sub codec — subrip maps to SRT");
+        assert!(
+            output.contains("SRT"),
+            "friendly sub codec — subrip maps to SRT"
+        );
         assert!(output.contains("\"Signs & Songs\""), "subtitle title");
         assert!(output.contains("source = N"), "footer hint");
     }

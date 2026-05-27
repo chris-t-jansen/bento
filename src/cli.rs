@@ -149,9 +149,7 @@ pub enum Command {
     },
     /// Show the streams in a video file — track numbers, codecs, and titles —
     /// formatted so you can copy source = N straight into your bento.toml.
-    Probe {
-        path: PathBuf,
-    },
+    Probe { path: PathBuf },
 }
 
 pub fn run() -> Result<()> {
