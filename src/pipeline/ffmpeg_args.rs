@@ -536,7 +536,7 @@ mod tests {
             channels,
             bitrate_kbps,
             sample_rate: Some(48000),
-            language: None,
+            ..Default::default()
         }
     }
 
@@ -671,6 +671,7 @@ mod tests {
             video: VideoStreamInfo {
                 width: 1920,
                 height: 1080,
+                ..Default::default()
             },
             audio: Vec::new(),
             subtitles: Vec::new(),

@@ -68,6 +68,7 @@ Foundation pieces that are working end-to-end. Most have at least light test cov
 - Output filename naming: `naming.regex` capture + `naming.template` expansion with format specifiers; `episode`/`ep` capture auto-embeds episode metadata (`tves` for MP4, `PART_NUMBER` for MKV) — DESIGN.md §[output] §Naming. (`pipeline/naming.rs`.)
 - External subtitle tracks (`mux = "external"`): sidecar `.srt`/`.ass` files written next to the output video with Jellyfin-compatible filenames; `on_existing` policy applied per sidecar; duplicate sidecar name detection at validation time; external ASS correctly exempt from the MP4 soft-mux restriction — DESIGN.md §Subtitles > External subtitle tracks. (`pipeline/subtitle_prep.rs`, `validate.rs`.)
 - **`bento repair`** — DESIGN.md §`bento repair`. Structural comparison of user's global config against baked defaults to detect missing fields; text-based surgical insertion preserving all existing content and comments (doc comments from the bootstrap template appended with `# (added by bento repair)` marker); corrupt-config path offers full regeneration; `--yes` flag for non-interactive use. `run_repair_at` is the path-explicit entry point used by integration tests. (`src/repair.rs`, `tests/repair.rs`; 22 unit + 7 integration tests.)
+- **`bento probe <path>` subcommand** — DESIGN.md §CLI. Displays stream info from a video file in Bento-native terms: friendly codec names, resolution, framerate, 1-based type-relative track numbers for audio and subtitles (matching `source =` in config), language codes, channel layout, bitrate, and track titles. Section headers are colored (red/green/blue as a nod to RGB) and track numbers are magenta so users can copy them straight into `bento.toml`. Extended `VideoStreamInfo`, `AudioStreamInfo`, and `SubtitleStreamInfo` in `pipeline/probe.rs` to carry the additional fields; `probe_source_streams` now parses codec, framerate, channel layout, title/language tags, and falls back to the `BPS` stream tag for bitrate (needed for MKV files, which rarely carry `bit_rate` in stream headers). Column widths for language, codec, and channel layout are computed across all tracks so every column aligns. Footer hint reminds users how track numbers map to `source =`. (`src/probe.rs`, `src/pipeline/probe.rs`; 8 unit tests + 1 render integration test.)
 
 ---
 
@@ -79,7 +80,9 @@ Foundation pieces that are working end-to-end. Most have at least light test cov
 
 ## Not started
 
-*(nothing currently not started)*
+- **Reconsider `normalize_mix` scope and add a sanity warning.** Currently section-only (`Audio` struct in `src/config/audio.rs`; no field on `AudioTrack`). Two things to think through: (1) it arguably should be per-track-overridable like `encoder`/`bitrate`/`mixdown`, since downmix normalization is a per-track concern; (2) it only does anything on surround→stereo downmixes, so setting `normalize_mix = true` when no track targets `mixdown = "stereo"` is likely a mistake worth warning about. Needs more design thought before implementing. Surfaced 2026-05-26 during docs work.
+- **Document `bento probe` in the docs site.** The docs currently have no mention of `bento probe`. Should cover: what it does, example output, and an explicit call-out that the track numbers printed are the same values to use for `source =` in `[audio]` and `[subtitles]` config. Good candidate for a new page under the CLI reference section, or as a subsection of the existing `bento check` / `bento config` page if one exists. Surfaced 2026-05-26.
+- **Refactor `pipeline::run_convert_directory` and `pipeline::run_convert_file` to reduce argument counts.** Both functions currently take 8 and 10 positional arguments respectively, exceeding clippy's `too_many_arguments` threshold. They are individually `#[allow]`-ed with TODO markers. Likely fix: bundle `cli_config`, `dry_run`, `verbosity`, `warn_flags`, `temp_root`, and the output writer into a single `ConvertContext`-style struct that both functions take by reference. Touches the `convert` command path; consider doing it alongside any other convert-pipeline refactor.
 
 ---
 
@@ -87,8 +90,7 @@ Foundation pieces that are working end-to-end. Most have at least light test cov
 
 Anything explicitly deferred in DESIGN.md or surfaced as future work. Move items here from "Not started" if a session concludes they're out of scope for MVP.
 
-- **Reconsider `normalize_mix` scope and add a sanity warning.** Currently section-only (`Audio` struct in `src/config/audio.rs`; no field on `AudioTrack`). Two things to think through: (1) it arguably should be per-track-overridable like `encoder`/`bitrate`/`mixdown`, since downmix normalization is a per-track concern; (2) it only does anything on surround→stereo downmixes, so setting `normalize_mix = true` when no track targets `mixdown = "stereo"` is likely a mistake worth warning about. Needs more design thought before implementing. Surfaced 2026-05-26 during docs work.
-- **Refactor `pipeline::run_convert_directory` and `pipeline::run_convert_file` to reduce argument counts.** Both functions currently take 8 and 10 positional arguments respectively, exceeding clippy's `too_many_arguments` threshold. They are individually `#[allow]`-ed with TODO markers. Likely fix: bundle `cli_config`, `dry_run`, `verbosity`, `warn_flags`, `temp_root`, and the output writer into a single `ConvertContext`-style struct that both functions take by reference. Touches the `convert` command path; consider doing it alongside any other convert-pipeline refactor.
+*(nothing currently in backlog)*
 
 ---
 
@@ -104,4 +106,4 @@ Things in the code that don't cleanly map back to DESIGN.md, or design decisions
 
 ---
 
-*Last updated: 2026-05-26. Session: `dpl2` mixdown — `Mixdown::Dpl2` variant in `src/config/audio.rs`; `mixdown_to_channels` returns 2 (same as stereo); `AudioAction::Transcode` gains `use_dpl2: bool`; arg builder emits `aresample=matrix_encoding=dplii` filter (composing with `loudnorm` when both are active). Bootstrap comment and docs updated. 275 tests total, all passing. Not-started list now empty.*
+*Last updated: 2026-05-26. `bento probe` complete; added docs item to Not Started.*

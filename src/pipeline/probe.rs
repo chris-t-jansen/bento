@@ -16,8 +16,12 @@ pub struct SourceProbe {
 
 #[derive(Debug, Default)]
 pub struct VideoStreamInfo {
+    /// Codec name as reported by ffprobe (e.g. "h264", "hevc", "av1").
+    pub codec: String,
     pub width: u32,
     pub height: u32,
+    /// Frame rate as a rational string, e.g. "24000/1001" or "25/1".
+    pub r_frame_rate: Option<String>,
 }
 
 #[derive(Debug, Default)]
@@ -25,16 +29,21 @@ pub struct AudioStreamInfo {
     /// Codec name as reported by ffprobe (e.g. "aac", "ac3", "dts", "flac").
     pub codec: String,
     pub channels: u32,
+    /// Channel layout as reported by ffprobe (e.g. "stereo", "5.1", "7.1").
+    pub channel_layout: Option<String>,
     /// Source bitrate in kbps, if ffprobe can determine it.
     pub bitrate_kbps: Option<u32>,
     pub sample_rate: Option<u32>,
     pub language: Option<String>,
+    pub title: Option<String>,
 }
 
 #[derive(Debug, Default)]
 pub struct SubtitleStreamInfo {
     /// Codec name as reported by ffprobe (e.g. "ass", "subrip").
     pub codec: String,
+    pub language: Option<String>,
+    pub title: Option<String>,
 }
 
 impl SourceProbe {
@@ -97,27 +106,42 @@ pub fn probe_source_streams(input: &Path) -> Result<SourceProbe> {
             "video" if !video_found => {
                 video_found = true;
                 video = VideoStreamInfo {
+                    codec: stream["codec_name"].as_str().unwrap_or("").to_string(),
                     width: stream["width"].as_u64().unwrap_or(0) as u32,
                     height: stream["height"].as_u64().unwrap_or(0) as u32,
+                    r_frame_rate: stream["r_frame_rate"].as_str().map(str::to_string),
                 };
             }
             "audio" => {
                 audio.push(AudioStreamInfo {
                     codec: stream["codec_name"].as_str().unwrap_or("").to_string(),
                     channels: stream["channels"].as_u64().unwrap_or(2) as u32,
+                    channel_layout: stream["channel_layout"].as_str().map(str::to_string),
                     bitrate_kbps: stream["bit_rate"]
                         .as_str()
                         .and_then(|s| s.parse::<u64>().ok())
+                        .filter(|&b| b > 0)
+                        .or_else(|| {
+                            // MKV containers store per-track bitrate as a BPS tag
+                            // written by mkvmerge and similar tools.
+                            stream["tags"]["BPS"]
+                                .as_str()
+                                .and_then(|s| s.parse::<u64>().ok())
+                                .filter(|&b| b > 0)
+                        })
                         .map(|bps| (bps / 1000) as u32),
                     sample_rate: stream["sample_rate"]
                         .as_str()
                         .and_then(|s| s.parse::<u32>().ok()),
                     language: stream["tags"]["language"].as_str().map(str::to_string),
+                    title: stream["tags"]["title"].as_str().map(str::to_string),
                 });
             }
             "subtitle" => {
                 subtitles.push(SubtitleStreamInfo {
                     codec: stream["codec_name"].as_str().unwrap_or("").to_string(),
+                    language: stream["tags"]["language"].as_str().map(str::to_string),
+                    title: stream["tags"]["title"].as_str().map(str::to_string),
                 });
             }
             _ => {}

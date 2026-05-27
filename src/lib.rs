@@ -5,6 +5,7 @@ pub mod error;
 pub mod ffmpeg;
 pub mod layers;
 pub mod pipeline;
+pub mod probe;
 pub mod progress;
 pub mod render;
 pub mod repair;
