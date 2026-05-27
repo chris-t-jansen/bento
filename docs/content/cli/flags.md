@@ -1,7 +1,7 @@
 +++
 title = "Flags"
 description = "Complete reference for verbosity, warning suppression, and output-collision flags."
-weight = 5
+weight = 6
 +++
 
 ## Verbosity

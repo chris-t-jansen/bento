@@ -5,7 +5,7 @@ sort_by = "weight"
 weight = 5
 +++
 
-Bento has four subcommands. The config is the primary interface — the CLI exists to drive it, not replace it.
+Bento has five subcommands. The config is the primary interface — the CLI exists to drive it, not replace it.
 
 | Subcommand | Description |
 |---|---|
@@ -13,6 +13,7 @@ Bento has four subcommands. The config is the primary interface — the CLI exis
 | [`bento config`](@/cli/config.md) | Print the fully resolved config with per-field provenance. Does not encode. |
 | [`bento check`](@/cli/check.md) | Verify external dependencies and the global config. |
 | [`bento repair`](@/cli/repair.md) | Populate missing fields in the global config with current defaults. |
+| [`bento probe`](@/cli/probe.md) | Inspect a video file's streams and identify track numbers for use in config. |
 
 ## Override mechanism
 

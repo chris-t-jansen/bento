@@ -8,52 +8,34 @@ weight = 4
 
 ## Inspect the source file
 
-Start by seeing what's in your source file. `ffprobe` (bundled with `ffmpeg`) gives you the stream layout:
+Start by seeing what's in your source file with `bento probe`:
 
 ```sh
-ffprobe -v error \
-  -show_entries stream=index,codec_type,codec_name,tags=language,tags=title \
-  -of default=noprint_wrappers=1 \
-  episode01.mkv
+bento probe episode01.mkv
 ```
 
 Example output from a typical anime MKV:
 
 ```
-index=0
-codec_type=video
-codec_name=h264
-index=1
-codec_type=audio
-codec_name=aac
-tag:language=jpn
-tag:TITLE=Japanese
-index=2
-codec_type=audio
-codec_name=aac
-tag:language=eng
-tag:TITLE=English
-index=3
-codec_type=subtitle
-codec_name=ass
-tag:language=eng
-tag:TITLE=Full Subtitles
-index=4
-codec_type=subtitle
-codec_name=ass
-tag:language=eng
-tag:TITLE=Signs
+  episode01.mkv   23:40
+
+  Video
+    H.264   1920 × 1080   23.976 fps
+
+  Audio   2 tracks
+     1   jpn   AAC   stereo   "Japanese"
+     2   eng   AAC   stereo   "English"
+
+  Subtitles   2 tracks
+     1   eng   ASS   "Full Subtitles"
+     2   eng   ASS   "Signs"
+
+  (Track numbers correspond to source = N in your bento.toml.)
 ```
 
-**A note on track numbering.** Bento's `source` field is **1-based and type-relative** — it counts streams of a given type in order, starting from 1. The first audio stream is `source = 1`, the second is `source = 2`, and so on. Subtitle streams are numbered the same way, independently. The overall `index` values from ffprobe (0, 1, 2, 3, 4...) are not what you write in `source`.
+The numbers shown in the left column are exactly what you write for `source =` in your `[audio]` and `[subtitles]` config. Audio and subtitle tracks are numbered independently, both starting at 1.
 
-For the output above:
-- `source = 1` (audio) → Japanese, index 1
-- `source = 2` (audio) → English, index 2
-- `source = 1` (subtitles) → Full Subtitles, index 3
-- `source = 2` (subtitles) → Signs, index 4
-
-Run the same command on a few different episodes before writing the config — stream order occasionally varies between episodes in the same release.
+Run `bento probe` on a few different episodes before writing the config — stream order occasionally varies between episodes in the same release. See the [`bento probe` reference](@/cli/probe.md) for details on what each column means.
 
 ## Video: do you need preprocessing?
 
@@ -69,7 +51,7 @@ If your source needs none of this, omit the `[video]` section from your `bento.t
 
 ## Audio: identify and configure tracks
 
-From the ffprobe output, note how many audio streams there are, their codecs and channel counts, and which is the original-language track.
+From the `bento probe` output, note how many audio streams there are, their codecs and channel layouts, and which is the original-language track.
 
 For each output audio track you want, write an entry in the `tracks` list with the `source` index, language code, and a title:
 

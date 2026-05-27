@@ -75,14 +75,13 @@ Foundation pieces that are working end-to-end. Most have at least light test cov
 
 ## In progress
 
-*(nothing currently in progress)*
+- **Document `bento probe` in the docs site.** New page at `docs/content/cli/probe.md`; `_index.md` table updated; `flags.md` weight bumped from 5→6. Branch: `docs/probe-subcommand`. — ROADMAP.md §Not started.
 
 ---
 
 ## Not started
 
 - **Reconsider `normalize_mix` scope and add a sanity warning.** Currently section-only (`Audio` struct in `src/config/audio.rs`; no field on `AudioTrack`). Two things to think through: (1) it arguably should be per-track-overridable like `encoder`/`bitrate`/`mixdown`, since downmix normalization is a per-track concern; (2) it only does anything on surround→stereo downmixes, so setting `normalize_mix = true` when no track targets `mixdown = "stereo"` is likely a mistake worth warning about. Needs more design thought before implementing. Surfaced 2026-05-26 during docs work.
-- **Document `bento probe` in the docs site.** The docs currently have no mention of `bento probe`. Should cover: what it does, example output, and an explicit call-out that the track numbers printed are the same values to use for `source =` in `[audio]` and `[subtitles]` config. Good candidate for a new page under the CLI reference section, or as a subsection of the existing `bento check` / `bento config` page if one exists. Surfaced 2026-05-26.
 
 ---
 
