@@ -79,7 +79,7 @@ Foundation pieces that are working end-to-end. Most have at least light test cov
 
 ## Not started
 
-- **`dpl2` (Dolby Pro Logic II) mixdown option** — DESIGN.md §Audio (line 290, `mixdown` values). Listed in the design spec's `mixdown` values but absent from the `Mixdown` enum in `src/config/audio.rs` (only `stereo`, `5point1`, `mono` exist). Because the enum deserializes strictly, `mixdown = "dpl2"` currently fails to parse. Removed from the configuration docs (2026-05-26) pending implementation.
+*(nothing currently not started)*
 
 ---
 
@@ -104,4 +104,4 @@ Things in the code that don't cleanly map back to DESIGN.md, or design decisions
 
 ---
 
-*Last updated: 2026-05-21. Session: `bento repair` — `src/repair.rs` with structural default-vs-user comparison, text-based surgical field insertion preserving existing content, template-driven doc comments, corrupt-config regeneration path, `--yes` flag. `run_repair_at` entry point enables direct integration testing. 22 unit tests + 7 integration tests in `tests/repair.rs`. 262 tests total, all passing. All design-doc features now implemented.*
+*Last updated: 2026-05-26. Session: `dpl2` mixdown — `Mixdown::Dpl2` variant in `src/config/audio.rs`; `mixdown_to_channels` returns 2 (same as stereo); `AudioAction::Transcode` gains `use_dpl2: bool`; arg builder emits `aresample=matrix_encoding=dplii` filter (composing with `loudnorm` when both are active). Bootstrap comment and docs updated. 275 tests total, all passing. Not-started list now empty.*

@@ -1122,14 +1122,15 @@ fn print_dry_run_plan(
                             .as_deref()
                             .or(config.audio.encoder.as_deref())
                             .unwrap_or("aac");
+                        let mixdown = t
+                            .mixdown
+                            .or(config.audio.mixdown)
+                            .unwrap_or(crate::config::Mixdown::Stereo);
                         AudioAction::Transcode {
                             encoder: ffmpeg_args::audio_encoder_to_ffmpeg(enc).to_string(),
                             bitrate_kbps: t.bitrate.or(config.audio.bitrate).unwrap_or(192),
-                            channels: ffmpeg_args::mixdown_to_channels(
-                                t.mixdown
-                                    .or(config.audio.mixdown)
-                                    .unwrap_or(crate::config::Mixdown::Stereo),
-                            ),
+                            channels: ffmpeg_args::mixdown_to_channels(mixdown),
+                            use_dpl2: matches!(mixdown, crate::config::Mixdown::Dpl2),
                         }
                     })
             })
@@ -1175,6 +1176,7 @@ fn print_dry_run_plan(
                     encoder,
                     bitrate_kbps,
                     channels,
+                    ..
                 } => {
                     writeln!(
                         out,

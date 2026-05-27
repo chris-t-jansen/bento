@@ -20,7 +20,7 @@ normalize_mix    = <bool>
 # All-tracks fields
 encoder          = "aac" | "opus" | "flac"
 bitrate          = <integer>
-mixdown          = "stereo" | "5point1" | "mono"
+mixdown          = "stereo" | "5point1" | "mono" | "dpl2"
 force_mixdown    = <bool>
 force_bitrate    = <bool>
 
@@ -43,7 +43,7 @@ tracks = [
         # Per-track override fields
         encoder          = "aac" | "opus" | "flac"
         bitrate          = <integer>
-        mixdown          = "stereo" | "5point1" | "mono"
+        mixdown          = "stereo" | "5point1" | "mono" | "dpl2"
         force_bitrate    = <bool>
         force_mixdown    = <bool>
     },
@@ -78,6 +78,7 @@ Sets the output channel layout across all tracks. Default `"stereo"`. Can be ove
 - **`"stereo"`** — 2-channel stereo
 - **`"5point1"`** — 5.1 surround
 - **`"mono"`** — mono
+- **`"dpl2"`** — Dolby Pro Logic II matrix-encoded stereo. Encodes a surround mix into a 2-channel signal that a DPL II decoder can expand back to surround. Useful for players or receivers with Dolby Pro Logic II decoding. Output is 2-channel; ffmpeg applies `aresample=matrix_encoding=dplii` during the transcode.
 
 ### `force_mixdown = <bool>` {#force_mixdown}
 
