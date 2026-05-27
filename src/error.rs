@@ -24,6 +24,9 @@ pub enum Error {
     #[error("path does not exist: {0}")]
     PathNotFound(PathBuf),
 
+    #[error("{0} is a directory; `bento probe` expects a single video file")]
+    PathIsDirectory(PathBuf),
+
     #[error("{errors} config error(s) in {path} (see output above)")]
     ConfigInvalid {
         path: PathBuf,

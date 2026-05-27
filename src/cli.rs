@@ -147,6 +147,9 @@ pub enum Command {
         #[arg(short = 'y', long = "yes")]
         yes: bool,
     },
+    /// Show the streams in a video file — track numbers, codecs, and titles —
+    /// formatted so you can copy source = N straight into your bento.toml.
+    Probe { path: PathBuf },
 }
 
 pub fn run() -> Result<()> {
@@ -214,6 +217,7 @@ pub fn run() -> Result<()> {
             )
         }
         Command::Repair { yes } => crate::repair::run_repair(yes, &mut stdout),
+        Command::Probe { path } => crate::probe::run_probe(&path, &mut stdout),
     }
 }
 
