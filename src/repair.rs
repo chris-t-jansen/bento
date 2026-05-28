@@ -15,6 +15,13 @@ use std::path::Path;
 
 use crate::error::{Error, Result};
 
+/// Deprecated config keys that `repair` upgrades in place, as
+/// `(old_dotted_path, new_dotted_path)`. Pure key renames only — no value or
+/// semantics changes. Each entry must have a matching `#[serde(alias = "...")]`
+/// on the renamed field so the old name keeps *parsing*; this table makes
+/// `repair` *rewrite* it. Keep the two in sync when adding future renames.
+const KEY_RENAMES: &[(&str, &str)] = &[("audio.normalize_mix", "audio.normalize_downmix")];
+
 // =============================================================================
 // Entry points
 // =============================================================================
@@ -76,35 +83,57 @@ pub fn run_repair_at(path: &Path, yes: bool, out: &mut dyn Write) -> Result<()> 
     let user_value = toml::Value::try_from(&user_config).expect("config always serializable");
 
     let missing = find_missing(&defaults_value, &user_value);
+    // Renames operate on the raw text: the structural detector above sees the
+    // aliased field as already present, so it can't migrate the deprecated key
+    // on its own.
+    let (migrated_text, renames) = apply_renames(&text);
 
-    if missing.is_empty() {
+    if missing.is_empty() && renames.is_empty() {
         writeln!(out, "Global config is up to date — no fields are missing.")
             .map_err(crate::io_render_err)?;
         writeln!(out, "  {}", path.display()).map_err(crate::io_render_err)?;
         return Ok(());
     }
 
-    writeln!(
-        out,
-        "Global config: {} field(s) missing from {}",
-        missing.len(),
-        path.display()
-    )
-    .map_err(crate::io_render_err)?;
-    writeln!(out).map_err(crate::io_render_err)?;
-
-    for (dotted_path, value) in &missing {
-        writeln!(out, "  {} = {}", dotted_path, format_value(value))
-            .map_err(crate::io_render_err)?;
+    if !renames.is_empty() {
+        writeln!(
+            out,
+            "Global config: {} deprecated key(s) to upgrade in {}",
+            renames.len(),
+            path.display()
+        )
+        .map_err(crate::io_render_err)?;
+        writeln!(out).map_err(crate::io_render_err)?;
+        for (old, new) in &renames {
+            writeln!(out, "  {} → {}", old, new).map_err(crate::io_render_err)?;
+        }
+        writeln!(out).map_err(crate::io_render_err)?;
     }
-    writeln!(out).map_err(crate::io_render_err)?;
 
-    if !confirm("Add these fields to your global config?", yes, out)? {
+    if !missing.is_empty() {
+        writeln!(
+            out,
+            "Global config: {} field(s) missing from {}",
+            missing.len(),
+            path.display()
+        )
+        .map_err(crate::io_render_err)?;
+        writeln!(out).map_err(crate::io_render_err)?;
+
+        for (dotted_path, value) in &missing {
+            writeln!(out, "  {} = {}", dotted_path, format_value(value))
+                .map_err(crate::io_render_err)?;
+        }
+        writeln!(out).map_err(crate::io_render_err)?;
+    }
+
+    if !confirm("Apply these changes to your global config?", yes, out)? {
         writeln!(out, "skipped").map_err(crate::io_render_err)?;
         return Ok(());
     }
 
-    let repaired = insert_missing(&text, &missing)?;
+    // Insert missing fields into the already-migrated text so both changes land.
+    let repaired = insert_missing(&migrated_text, &missing)?;
 
     // Validate before writing — guards against edge cases like inline-table
     // sections that can't be extended with a new [section.subsection] header.
@@ -117,14 +146,86 @@ pub fn run_repair_at(path: &Path, yes: bool, out: &mut dyn Write) -> Result<()> 
         path: path.to_path_buf(),
         source: e,
     })?;
+    for (old, new) in &renames {
+        writeln!(out, "Upgraded deprecated key `{}` → `{}`.", old, new)
+            .map_err(crate::io_render_err)?;
+    }
     writeln!(
         out,
-        "Updated {} ({} field(s) added)",
+        "Updated {} ({} key(s) upgraded, {} field(s) added)",
         path.display(),
+        renames.len(),
         missing.len()
     )
     .map_err(crate::io_render_err)?;
     Ok(())
+}
+
+// =============================================================================
+// Deprecated-key rename migration
+// =============================================================================
+
+/// Rewrite deprecated config keys (per [`KEY_RENAMES`]) to their canonical
+/// names in the raw config text, preserving values, inline comments, and
+/// indentation. Returns the migrated text and the list of `(old, new)` dotted
+/// paths that were rewritten.
+///
+/// Limitations (matching the rest of the text-surgery code): only bare
+/// section-level keys are handled, not keys inside inline tables, and matches
+/// inside comments are ignored. When nothing matches, the original text is
+/// returned byte-for-byte.
+pub(crate) fn apply_renames(text: &str) -> (String, Vec<(&'static str, &'static str)>) {
+    let mut applied: Vec<(&'static str, &'static str)> = Vec::new();
+    let mut current_section = String::new();
+    let mut out_lines: Vec<String> = Vec::new();
+
+    for line in text.lines() {
+        let trimmed = line.trim();
+
+        if let Some(section) = parse_section_header(trimmed) {
+            current_section = section;
+            out_lines.push(line.to_string());
+            continue;
+        }
+        if trimmed.starts_with('#') || trimmed.is_empty() {
+            out_lines.push(line.to_string());
+            continue;
+        }
+
+        let rename = trimmed.find('=').and_then(|eq| {
+            let key = trimmed[..eq].trim();
+            if key.contains('[') || key.contains('{') || key.contains(' ') || key.contains('.') {
+                return None;
+            }
+            let dotted = if current_section.is_empty() {
+                key.to_string()
+            } else {
+                format!("{}.{}", current_section, key)
+            };
+            KEY_RENAMES.iter().copied().find(|(old, _)| *old == dotted)
+        });
+
+        if let Some((old, new)) = rename {
+            let old_key = old.rsplit('.').next().unwrap_or(old);
+            let new_key = new.rsplit('.').next().unwrap_or(new);
+            // The key is the first token on the line; replacing its first
+            // occurrence rewrites only the key, leaving value/comment intact.
+            out_lines.push(line.replacen(old_key, new_key, 1));
+            applied.push((old, new));
+        } else {
+            out_lines.push(line.to_string());
+        }
+    }
+
+    if applied.is_empty() {
+        return (text.to_string(), applied);
+    }
+
+    let mut out = out_lines.join("\n");
+    if text.ends_with('\n') {
+        out.push('\n');
+    }
+    (out, applied)
 }
 
 // =============================================================================
@@ -539,11 +640,14 @@ mod tests {
     #[test]
     fn insert_into_existing_section_is_valid_toml() {
         let original = crate::bootstrap::generate_global_config_text();
-        let modified = original.replace("normalize_mix = true\n", "");
-        assert!(!modified.contains("normalize_mix"), "setup: field absent");
+        let modified = original.replace("normalize_downmix = true\n", "");
+        assert!(
+            !modified.contains("normalize_downmix = true"),
+            "setup: field absent"
+        );
 
         let missing = vec![(
-            "audio.normalize_mix".to_string(),
+            "audio.normalize_downmix".to_string(),
             toml::Value::Boolean(true),
         )];
         let repaired = insert_missing(&modified, &missing).unwrap();
@@ -551,7 +655,7 @@ mod tests {
         crate::config::Config::from_toml_str(&repaired)
             .expect("repaired text must parse as valid config");
         assert!(
-            repaired.contains("normalize_mix = true"),
+            repaired.contains("normalize_downmix = true"),
             "inserted field present"
         );
     }
@@ -641,14 +745,14 @@ mod tests {
     fn reports_and_inserts_missing_field() {
         let dir = TempDir::new("insert");
         let original = crate::bootstrap::generate_global_config_text();
-        let modified = original.replace("normalize_mix = true\n", "");
+        let modified = original.replace("normalize_downmix = true\n", "");
         dir.write("config.toml", &modified);
         let cfg = dir.path.join("config.toml");
 
         // Dry run (yes=false, non-TTY) → NotInteractive; confirm field listed.
         let (out, _) = run(&cfg, false);
         assert!(
-            out.contains("audio.normalize_mix"),
+            out.contains("audio.normalize_downmix"),
             "field listed; got: {}",
             out
         );
@@ -659,7 +763,7 @@ mod tests {
         assert!(out.contains("field(s) added"), "confirmed; got: {}", out);
 
         let repaired = dir.read("config.toml");
-        assert!(repaired.contains("normalize_mix = true"));
+        assert!(repaired.contains("normalize_downmix = true"));
         crate::config::Config::from_toml_str(&repaired).expect("repaired config parses");
     }
 
@@ -693,7 +797,7 @@ mod tests {
         let dir = TempDir::new("multi");
         let original = crate::bootstrap::generate_global_config_text();
         let modified = original
-            .replace("normalize_mix = true\n", "")
+            .replace("normalize_downmix = true\n", "")
             .replace("preserve_chapters = true\n", "");
         dir.write("config.toml", &modified);
         let cfg = dir.path.join("config.toml");
@@ -703,7 +807,7 @@ mod tests {
         assert!(out.contains("field(s) added"));
 
         let repaired = dir.read("config.toml");
-        assert!(repaired.contains("normalize_mix = true"));
+        assert!(repaired.contains("normalize_downmix = true"));
         assert!(repaired.contains("preserve_chapters = true"));
         crate::config::Config::from_toml_str(&repaired).expect("repaired config parses");
     }
@@ -712,19 +816,84 @@ mod tests {
     fn inserted_fields_carry_doc_comments() {
         let dir = TempDir::new("comments");
         let original = crate::bootstrap::generate_global_config_text();
-        let modified = original.replace("normalize_mix = true\n", "");
+        let modified = original.replace("normalize_downmix = true\n", "");
         dir.write("config.toml", &modified);
         let cfg = dir.path.join("config.toml");
 
         run(&cfg, true).1.unwrap();
         let repaired = dir.read("config.toml");
 
-        // The bootstrap template has a comment above normalize_mix.
+        // The bootstrap template has a comment above normalize_downmix.
         // After repair, a comment line should appear before the inserted field.
         assert!(
             repaired.contains("# (added by bento repair)"),
             "repair marker present; got:\n{}",
             repaired
         );
+    }
+
+    // -------------------------------------------------------------------------
+    // apply_renames
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn rename_rewrites_key_preserving_value_and_comment() {
+        let text = "[audio]\nnormalize_mix = false  # keep this\n";
+        let (out, applied) = apply_renames(text);
+        assert_eq!(
+            applied,
+            vec![("audio.normalize_mix", "audio.normalize_downmix")]
+        );
+        assert_eq!(out, "[audio]\nnormalize_downmix = false  # keep this\n");
+    }
+
+    #[test]
+    fn rename_only_in_matching_section() {
+        // A `normalize_mix` key outside [audio] is not in the rename table and
+        // must be left untouched (and would not parse, but apply_renames is
+        // purely textual so we just assert it's not rewritten).
+        let text = "[output]\nnormalize_mix = true\n";
+        let (out, applied) = apply_renames(text);
+        assert!(applied.is_empty());
+        assert_eq!(out, text);
+    }
+
+    #[test]
+    fn rename_ignores_commented_lines() {
+        let text = "[audio]\n# normalize_mix = true\nbitrate = 192\n";
+        let (out, applied) = apply_renames(text);
+        assert!(applied.is_empty());
+        assert_eq!(out, text);
+    }
+
+    #[test]
+    fn rename_is_idempotent() {
+        let text = "[audio]\nnormalize_mix = true\n";
+        let (once, _) = apply_renames(text);
+        let (twice, applied) = apply_renames(&once);
+        assert!(applied.is_empty(), "second pass should be a no-op");
+        assert_eq!(once, twice);
+    }
+
+    #[test]
+    fn repair_upgrades_deprecated_key_end_to_end() {
+        let dir = TempDir::new("rename");
+        // A config carrying the deprecated key but otherwise complete.
+        let original = crate::bootstrap::generate_global_config_text()
+            .replace("normalize_downmix = true", "normalize_mix = true");
+        dir.write("config.toml", &original);
+        let cfg = dir.path.join("config.toml");
+
+        let (out, r) = run(&cfg, true);
+        r.unwrap();
+        assert!(out.contains("Upgraded deprecated key"), "got: {}", out);
+        assert!(out.contains("key(s) upgraded"), "got: {}", out);
+
+        let repaired = dir.read("config.toml");
+        assert!(repaired.contains("normalize_downmix = true"));
+        // The assignment is gone; the doc comment may still reference the old
+        // name ("Formerly `normalize_mix`"), so check the assignment specifically.
+        assert!(!repaired.contains("normalize_mix = "));
+        crate::config::Config::from_toml_str(&repaired).expect("repaired config parses");
     }
 }

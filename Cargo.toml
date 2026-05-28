@@ -1,6 +1,6 @@
 [package]
 name = "bento"
-version = "1.0.0"
+version = "1.1.0"
 edition = "2024"
 authors = ["Christian Jansen <chris+bento@claypotfrog.com>"]
 description = "A configuration-driven CLI for converting and re-encoding video files built on top of FFmpeg."

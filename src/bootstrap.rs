@@ -167,12 +167,21 @@ force_bitrate = false
 # Default true: a configured `mixdown` is treated as a hard requirement.
 force_mixdown = true
 
-# Apply EBU R128 loudness normalization (loudnorm=I=-16:TP=-1.5:LRA=11) during
-# audio transcoding. Combats quiet-dialogue artifacts on surround→stereo downmixes.
-normalize_mix = true
+# Apply EBU R128 loudness normalization (loudnorm=I=-16:TP=-1.5:LRA=11) when an
+# audio track is folded from surround down to fewer channels (5.1→stereo,
+# 5.1→mono). This normalizes the *overall* program loudness of the downmix; it
+# is not dialogue-specific, but on surround sources mastered for a different
+# listening setup it usually keeps dialogue at a sensible level. Advisory: it
+# never forces a transcode on its own, and does nothing unless a qualifying
+# downmix actually happens. Overridable per audio track.
+normalize_downmix = true
 
 # Warn when no audio track is marked default = true.
 warn_no_default = true
+
+# Warn when a track is downmixed from surround but normalization is off
+# (normalize_downmix = false) — dialogue may end up quiet.
+warn_unnormalized_downmix = true
 
 # Audio tracks (REQUIRED if you want audio output) — set per show in
 # <show>/bento.toml:

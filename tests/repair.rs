@@ -70,14 +70,14 @@ fn noop_on_complete_config() {
 fn reports_missing_field() {
     let dir = TestDir::new("reports");
     let modified =
-        bento::bootstrap::generate_global_config_text().replace("normalize_mix = true\n", "");
+        bento::bootstrap::generate_global_config_text().replace("normalize_downmix = true\n", "");
     let cfg = dir.write("config.toml", &modified);
 
     // yes=false in a non-TTY context → NotInteractive (confirm never reached
     // when there are missing fields), so we check the output before that.
     let (out, _) = run(&cfg, false);
     assert!(
-        out.contains("audio.normalize_mix"),
+        out.contains("audio.normalize_downmix"),
         "missing field listed; got: {}",
         out
     );
@@ -87,7 +87,7 @@ fn reports_missing_field() {
 fn inserts_missing_field_with_yes() {
     let dir = TestDir::new("inserts");
     let modified =
-        bento::bootstrap::generate_global_config_text().replace("normalize_mix = true\n", "");
+        bento::bootstrap::generate_global_config_text().replace("normalize_downmix = true\n", "");
     dir.write("config.toml", &modified);
     let cfg = dir.path.join("config.toml");
 
@@ -96,7 +96,10 @@ fn inserts_missing_field_with_yes() {
     assert!(out.contains("field(s) added"), "confirmed; got: {}", out);
 
     let repaired = dir.read("config.toml");
-    assert!(repaired.contains("normalize_mix = true"), "field inserted");
+    assert!(
+        repaired.contains("normalize_downmix = true"),
+        "field inserted"
+    );
     bento::config::Config::from_toml_str(&repaired).expect("repaired config parses");
 }
 
@@ -129,7 +132,7 @@ fn corrupt_config_with_yes_regenerates() {
 fn multiple_missing_fields_all_inserted() {
     let dir = TestDir::new("multi");
     let modified = bento::bootstrap::generate_global_config_text()
-        .replace("normalize_mix = true\n", "")
+        .replace("normalize_downmix = true\n", "")
         .replace("preserve_chapters = true\n", "");
     dir.write("config.toml", &modified);
     let cfg = dir.path.join("config.toml");
@@ -140,8 +143,8 @@ fn multiple_missing_fields_all_inserted() {
 
     let repaired = dir.read("config.toml");
     assert!(
-        repaired.contains("normalize_mix = true"),
-        "normalize_mix inserted"
+        repaired.contains("normalize_downmix = true"),
+        "normalize_downmix inserted"
     );
     assert!(
         repaired.contains("preserve_chapters = true"),
@@ -154,7 +157,7 @@ fn multiple_missing_fields_all_inserted() {
 fn inserted_fields_carry_repair_marker_comment() {
     let dir = TestDir::new("comments");
     let modified =
-        bento::bootstrap::generate_global_config_text().replace("normalize_mix = true\n", "");
+        bento::bootstrap::generate_global_config_text().replace("normalize_downmix = true\n", "");
     dir.write("config.toml", &modified);
     let cfg = dir.path.join("config.toml");
 

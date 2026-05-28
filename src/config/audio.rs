@@ -1,6 +1,7 @@
 //! `[audio]` — section-level defaults that cascade as per-track defaults, plus a
-//! list of output tracks. Section-only fields (`normalize_mix`, `warn_no_default`,
-//! `tracks`) do not cascade.
+//! list of output tracks. `normalize_downmix` cascades like the other per-track
+//! defaults; the remaining section-only fields (`warn_no_default`,
+//! `warn_unnormalized_downmix`, `tracks`) do not cascade.
 
 use serde::{Deserialize, Serialize};
 
@@ -13,10 +14,15 @@ pub struct Audio {
     pub mixdown: Option<Mixdown>,
     pub force_bitrate: Option<bool>,
     pub force_mixdown: Option<bool>,
+    // `normalize_mix` is the pre-1.1 name. The alias keeps old configs parsing;
+    // `bento repair` upgrades the key in-place via the rename table in repair.rs
+    // (keep the two in sync when adding future renames).
+    #[serde(alias = "normalize_mix")]
+    pub normalize_downmix: Option<bool>,
 
     // Section-only — do not cascade
-    pub normalize_mix: Option<bool>,
     pub warn_no_default: Option<bool>,
+    pub warn_unnormalized_downmix: Option<bool>,
     pub tracks: Option<Vec<AudioTrack>>,
 }
 
@@ -50,6 +56,7 @@ pub struct AudioTrack {
     pub mixdown: Option<Mixdown>,
     pub force_bitrate: Option<bool>,
     pub force_mixdown: Option<bool>,
+    pub normalize_downmix: Option<bool>,
 }
 
 #[cfg(test)]
@@ -67,7 +74,7 @@ bitrate = 192
 mixdown = "stereo"
 force_bitrate = false
 force_mixdown = true
-normalize_mix = true
+normalize_downmix = true
 "#;
         let a = Config::from_toml_str(toml_str).unwrap().audio;
         assert_eq!(a.encoder.as_deref(), Some("aac"));
@@ -75,8 +82,36 @@ normalize_mix = true
         assert_eq!(a.mixdown, Some(Mixdown::Stereo));
         assert_eq!(a.force_bitrate, Some(false));
         assert_eq!(a.force_mixdown, Some(true));
-        assert_eq!(a.normalize_mix, Some(true));
+        assert_eq!(a.normalize_downmix, Some(true));
         assert!(a.tracks.is_none());
+    }
+
+    /// `normalize_mix` is the pre-1.1 name and must still parse via the serde
+    /// alias, landing in the `normalize_downmix` field.
+    #[test]
+    fn normalize_mix_alias_parses_into_normalize_downmix() {
+        let a = Config::from_toml_str("[audio]\nnormalize_mix = false\n")
+            .unwrap()
+            .audio;
+        assert_eq!(a.normalize_downmix, Some(false));
+    }
+
+    /// `normalize_downmix` is overridable per-track.
+    #[test]
+    fn normalize_downmix_per_track_override_parses() {
+        let toml_str = r#"
+[audio]
+normalize_downmix = true
+tracks = [
+    { source = 1, lang = "jpn" },
+    { source = 2, lang = "eng", normalize_downmix = false },
+]
+"#;
+        let a = Config::from_toml_str(toml_str).unwrap().audio;
+        assert_eq!(a.normalize_downmix, Some(true));
+        let tracks = a.tracks.expect("tracks present");
+        assert_eq!(tracks[0].normalize_downmix, None);
+        assert_eq!(tracks[1].normalize_downmix, Some(false));
     }
 
     /// Directory-config `[audio]` example — three tracks with sparse overrides.

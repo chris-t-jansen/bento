@@ -116,13 +116,16 @@ pub enum Command {
         #[arg(long = "no-warn-crf-codec-mismatch")]
         no_warn_crf_codec_mismatch: bool,
 
+        /// Suppress the "surround downmix without loudness normalization" warning.
+        #[arg(long = "no-warn-unnormalized-downmix")]
+        no_warn_unnormalized_downmix: bool,
+
         /// Suppress the "field resolved from baked-in default" warning.
-        /// (Warning not yet emitted; flag accepted for forward compatibility.)
         #[arg(long = "no-warn-missing")]
         no_warn_missing: bool,
 
-        /// Suppress the "redundant config override" warning.
-        /// (Warning not yet emitted; flag accepted for forward compatibility.)
+        /// Suppress the "redundant config override" warning (also covers a
+        /// per-track `normalize_downmix = true` that has no effect).
         #[arg(long = "no-warn-redundant")]
         no_warn_redundant: bool,
 
@@ -175,6 +178,7 @@ pub fn run() -> Result<()> {
             no_warn_ass_to_srt,
             no_warn_no_default,
             no_warn_crf_codec_mismatch,
+            no_warn_unnormalized_downmix,
             no_warn_missing,
             no_warn_redundant,
             set,
@@ -198,6 +202,7 @@ pub fn run() -> Result<()> {
                 no_warn_ass_to_srt,
                 no_warn_no_default,
                 no_warn_crf_codec_mismatch,
+                no_warn_unnormalized_downmix,
                 no_warn_missing,
                 no_warn_redundant,
             };

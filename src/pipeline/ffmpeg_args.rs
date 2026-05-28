@@ -18,23 +18,40 @@ pub enum AudioAction {
         bitrate_kbps: u32,
         channels: u32,
         use_dpl2: bool,
+        /// Whether to apply `loudnorm` during this transcode. True only when
+        /// `normalize_downmix` is on *and* this transcode actually folds a
+        /// surround source down to fewer channels (see [`applies_downmix_normalize`]).
+        normalize: bool,
     },
+}
+
+/// Whether downmix loudness compensation (`loudnorm`) should run for a track.
+///
+/// `normalize_downmix` is advisory: it never forces a transcode on its own, and
+/// it only does anything when an actual surround→fewer-channels downmix occurs.
+/// So it applies only when the resolved flag is on, the source is surround
+/// (>2 channels), and the target layout has fewer channels than the source.
+/// 5.1→stereo and 5.1→mono qualify; stereo→mono and same/upmix do not.
+fn applies_downmix_normalize(normalize: bool, source_channels: u32, target_channels: u32) -> bool {
+    normalize && source_channels > 2 && source_channels > target_channels
 }
 
 /// Decide whether to copy or transcode one audio track.
 ///
 /// Transcoding is required when any of these hold:
-/// - `normalize_mix` is true (loudnorm requires a filter pass)
 /// - `force_bitrate` is true
 /// - `force_mixdown` is true
 /// - source codec doesn't match the target encoder
 /// - source has more channels than the target mixdown
 /// - source bitrate exceeds the target
+///
+/// `normalize_downmix` is *not* a transcode trigger — it's advisory and only
+/// rides along on a transcode that's already happening for one of the reasons
+/// above (and only when that transcode is a qualifying downmix).
 pub fn decide_audio_action(
     track: &AudioTrack,
     section: &Audio,
     source: &AudioStreamInfo,
-    normalize_mix: bool,
 ) -> AudioAction {
     let encoder = track
         .encoder
@@ -54,13 +71,22 @@ pub fn decide_audio_action(
     let target_channels = mixdown_to_channels(mixdown);
     let use_dpl2 = matches!(mixdown, Mixdown::Dpl2);
 
-    if normalize_mix || force_bitrate || force_mixdown {
-        return AudioAction::Transcode {
-            encoder: audio_encoder_to_ffmpeg(encoder).to_string(),
-            bitrate_kbps: target_bitrate,
-            channels: target_channels,
-            use_dpl2,
-        };
+    let normalize_flag = track
+        .normalize_downmix
+        .or(section.normalize_downmix)
+        .unwrap_or(true);
+    let normalize = applies_downmix_normalize(normalize_flag, source.channels, target_channels);
+
+    let transcode = AudioAction::Transcode {
+        encoder: audio_encoder_to_ffmpeg(encoder).to_string(),
+        bitrate_kbps: target_bitrate,
+        channels: target_channels,
+        use_dpl2,
+        normalize,
+    };
+
+    if force_bitrate || force_mixdown {
+        return transcode;
     }
 
     let codec_ok = source.codec == encoder;
@@ -73,12 +99,7 @@ pub fn decide_audio_action(
     if codec_ok && channels_ok && bitrate_ok {
         AudioAction::Copy
     } else {
-        AudioAction::Transcode {
-            encoder: audio_encoder_to_ffmpeg(encoder).to_string(),
-            bitrate_kbps: target_bitrate,
-            channels: target_channels,
-            use_dpl2,
-        }
+        transcode
     }
 }
 
@@ -98,7 +119,6 @@ pub fn build_ffmpeg_args(
     episode: Option<i64>,
 ) -> Vec<String> {
     let container = config.output.container.unwrap_or(Container::Mp4);
-    let normalize_mix = config.audio.normalize_mix.unwrap_or(false);
 
     let mut args: Vec<String> = Vec::new();
 
@@ -189,7 +209,7 @@ pub fn build_ffmpeg_args(
             let stream_info = probe.audio.get(source_idx);
 
             let action = stream_info
-                .map(|src| decide_audio_action(track, &config.audio, src, normalize_mix))
+                .map(|src| decide_audio_action(track, &config.audio, src))
                 .unwrap_or_else(|| {
                     let mixdown = track
                         .mixdown
@@ -207,6 +227,8 @@ pub fn build_ffmpeg_args(
                         bitrate_kbps: track.bitrate.or(config.audio.bitrate).unwrap_or(192),
                         channels: mixdown_to_channels(mixdown),
                         use_dpl2: matches!(mixdown, Mixdown::Dpl2),
+                        // No probe info, so we can't confirm a downmix — don't normalize.
+                        normalize: false,
                     }
                 });
 
@@ -220,6 +242,7 @@ pub fn build_ffmpeg_args(
                     bitrate_kbps,
                     channels,
                     use_dpl2,
+                    normalize,
                 } => {
                     args.push(format!("-c:a:{}", i));
                     args.push(encoder.clone());
@@ -229,7 +252,7 @@ pub fn build_ffmpeg_args(
                     args.push(channels.to_string());
 
                     let mut filters: Vec<&str> = Vec::new();
-                    if normalize_mix {
+                    if *normalize {
                         filters.push("loudnorm=I=-16:TP=-1.5:LRA=11");
                     }
                     if *use_dpl2 {
@@ -550,9 +573,119 @@ mod tests {
         };
         let src = aac_stream(Some(192), 2);
         assert_eq!(
-            decide_audio_action(&track, &section, &src, false),
+            decide_audio_action(&track, &section, &src),
             AudioAction::Copy
         );
+    }
+
+    /// `normalize_downmix` defaulting to true must NOT force a transcode on a
+    /// copy-eligible track (it's advisory, not a trigger).
+    #[test]
+    fn normalize_does_not_force_transcode_on_copy_eligible() {
+        let track = AudioTrack::default();
+        let section = Audio {
+            encoder: Some("aac".to_string()),
+            bitrate: Some(192),
+            normalize_downmix: Some(true),
+            ..Default::default()
+        };
+        let src = aac_stream(Some(192), 2); // stereo aac, matches target
+        assert_eq!(
+            decide_audio_action(&track, &section, &src),
+            AudioAction::Copy
+        );
+    }
+
+    /// A surround→stereo downmix transcode carries `normalize = true`.
+    #[test]
+    fn surround_to_stereo_downmix_normalizes() {
+        let track = AudioTrack::default();
+        let section = Audio {
+            encoder: Some("aac".to_string()),
+            bitrate: Some(192),
+            mixdown: Some(Mixdown::Stereo),
+            normalize_downmix: Some(true),
+            ..Default::default()
+        };
+        let src = aac_stream(Some(192), 6); // 5.1 → stereo
+        assert!(matches!(
+            decide_audio_action(&track, &section, &src),
+            AudioAction::Transcode {
+                normalize: true,
+                ..
+            }
+        ));
+    }
+
+    /// A surround→mono downmix also normalizes.
+    #[test]
+    fn surround_to_mono_downmix_normalizes() {
+        let track = AudioTrack::default();
+        let section = Audio {
+            encoder: Some("aac".to_string()),
+            bitrate: Some(192),
+            mixdown: Some(Mixdown::Mono),
+            normalize_downmix: Some(true),
+            ..Default::default()
+        };
+        let src = aac_stream(Some(192), 6);
+        assert!(matches!(
+            decide_audio_action(&track, &section, &src),
+            AudioAction::Transcode {
+                normalize: true,
+                ..
+            }
+        ));
+    }
+
+    /// A transcode that isn't a downmix (codec change, stereo→stereo) does not
+    /// normalize even with the flag on.
+    #[test]
+    fn non_downmix_transcode_does_not_normalize() {
+        let track = AudioTrack::default();
+        let section = Audio {
+            encoder: Some("aac".to_string()),
+            bitrate: Some(192),
+            mixdown: Some(Mixdown::Stereo),
+            normalize_downmix: Some(true),
+            ..Default::default()
+        };
+        let src_ac3 = AudioStreamInfo {
+            codec: "ac3".to_string(),
+            ..aac_stream(Some(192), 2)
+        };
+        assert!(matches!(
+            decide_audio_action(&track, &section, &src_ac3),
+            AudioAction::Transcode {
+                normalize: false,
+                ..
+            }
+        ));
+    }
+
+    /// Per-track `normalize_downmix = false` overrides the section default on a
+    /// qualifying downmix.
+    #[test]
+    fn per_track_normalize_false_overrides_section() {
+        let track = AudioTrack {
+            normalize_downmix: Some(false),
+            ..Default::default()
+        };
+        let section = Audio {
+            encoder: Some("aac".to_string()),
+            bitrate: Some(192),
+            mixdown: Some(Mixdown::Stereo),
+            normalize_downmix: Some(true),
+            ..Default::default()
+        };
+        let src = aac_stream(Some(192), 6); // 5.1 → stereo, but normalize off for this track
+        assert!(matches!(
+            decide_audio_action(&track, &section, &src),
+            AudioAction::Transcode {
+                normalize: false,
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -569,22 +702,7 @@ mod tests {
             ..src
         };
         assert!(matches!(
-            decide_audio_action(&track, &section, &src_ac3, false),
-            AudioAction::Transcode { .. }
-        ));
-    }
-
-    #[test]
-    fn transcode_when_normalize_mix_is_true() {
-        let track = AudioTrack::default();
-        let section = Audio {
-            encoder: Some("aac".to_string()),
-            bitrate: Some(192),
-            ..Default::default()
-        };
-        let src = aac_stream(Some(192), 2);
-        assert!(matches!(
-            decide_audio_action(&track, &section, &src, true),
+            decide_audio_action(&track, &section, &src_ac3),
             AudioAction::Transcode { .. }
         ));
     }
@@ -600,7 +718,7 @@ mod tests {
         };
         let src = aac_stream(Some(128), 6); // 5.1 source → downmix to stereo
         assert!(matches!(
-            decide_audio_action(&track, &section, &src, false),
+            decide_audio_action(&track, &section, &src),
             AudioAction::Transcode { .. }
         ));
     }
@@ -618,7 +736,7 @@ mod tests {
         };
         let src = aac_stream(Some(192), 2);
         assert!(matches!(
-            decide_audio_action(&track, &section, &src, false),
+            decide_audio_action(&track, &section, &src),
             AudioAction::Transcode { .. }
         ));
     }

@@ -36,7 +36,10 @@ pub struct WarnFlags {
     /// Suppresses both `[audio].warn_no_default` and `[subtitles].warn_no_default`.
     pub no_warn_no_default: bool,
     pub no_warn_crf_codec_mismatch: bool,
+    /// Suppresses `[audio].warn_unnormalized_downmix`.
+    pub no_warn_unnormalized_downmix: bool,
     pub no_warn_missing: bool,
+    /// Also suppresses the per-track no-op `normalize_downmix = true` warning.
     pub no_warn_redundant: bool,
     /// Bulk flag: equivalent to setting every individual flag above.
     pub no_warnings: bool,
@@ -434,6 +437,7 @@ fn run_convert_file(
     // the plan, then return.  We never touch the output path or create a temp dir.
     if dry_run {
         let probe = probe_source_streams(input)?;
+        emit_normalize_warnings(&resolved.config, &probe, &warn_flags, out)?;
         let output_exists = output_path.exists();
         print_dry_run_plan(
             &input_name,
@@ -481,6 +485,7 @@ fn run_convert_file(
 
     // --- Probe source (gets duration for progress bar) -----------------------
     let probe = probe_source_streams(input)?;
+    emit_normalize_warnings(&resolved.config, &probe, &warn_flags, out)?;
 
     // --- Create progress display ---------------------------------------------
     let progress = FileProgress::new(
@@ -599,8 +604,13 @@ fn build_cli_config(
     if suppress_all || flags.no_warn_crf_codec_mismatch {
         config.video.warn_crf_codec_mismatch = Some(false);
     }
+    if suppress_all || flags.no_warn_unnormalized_downmix {
+        config.audio.warn_unnormalized_downmix = Some(false);
+    }
     // no_warn_missing and no_warn_redundant are accepted but have no Config
-    // counterparts; they are CLI-only no-ops.
+    // counterparts; they are consumed directly at emission time in
+    // run_convert_file (the redundant flag also gates the per-track no-op
+    // `normalize_downmix = true` warning).
 
     Ok(config)
 }
@@ -1096,7 +1106,6 @@ fn print_dry_run_plan(
 
     // --- Audio ---------------------------------------------------------------
     if let Some(tracks) = &config.audio.tracks {
-        let normalize_mix = config.audio.normalize_mix.unwrap_or(false);
         let actions: Vec<AudioAction> = tracks
             .iter()
             .map(|t| {
@@ -1104,7 +1113,7 @@ fn print_dry_run_plan(
                 probe
                     .audio
                     .get(src_idx)
-                    .map(|src| decide_audio_action(t, &config.audio, src, normalize_mix))
+                    .map(|src| decide_audio_action(t, &config.audio, src))
                     .unwrap_or_else(|| {
                         let enc = t
                             .encoder
@@ -1120,6 +1129,7 @@ fn print_dry_run_plan(
                             bitrate_kbps: t.bitrate.or(config.audio.bitrate).unwrap_or(192),
                             channels: ffmpeg_args::mixdown_to_channels(mixdown),
                             use_dpl2: matches!(mixdown, crate::config::Mixdown::Dpl2),
+                            normalize: false,
                         }
                     })
             })
@@ -1165,15 +1175,18 @@ fn print_dry_run_plan(
                     encoder,
                     bitrate_kbps,
                     channels,
+                    normalize,
                     ..
                 } => {
+                    let norm_note = if *normalize { " (loudnorm)" } else { "" };
                     writeln!(
                         out,
-                        "    {}: transcode → {} {}k {}.",
+                        "    {}: transcode → {} {}k {}{}.",
                         label,
                         encoder,
                         bitrate_kbps,
                         channels_label(*channels),
+                        norm_note,
                     )
                     .map_err(crate::io_render_err)?;
                 }
@@ -1306,6 +1319,82 @@ fn sub_ref_short(r: &Option<TrackRef>) -> String {
         }
         None => "?".to_string(),
     }
+}
+
+/// Emit the two `normalize_downmix`-related warnings for one source file. Both
+/// depend on the probed source channel counts, so they run after probing rather
+/// than at config-validation time (where no source info is available).
+///
+/// (A) Unnormalized downmix — config-implication, gated by
+/// `[audio].warn_unnormalized_downmix` (the `--no-warn-unnormalized-downmix`
+/// flag is already folded into the resolved config).
+/// (B) No-op per-track `normalize_downmix = true` — a runtime likely-mistake
+/// warning sharing the redundant-override suppression flag.
+fn emit_normalize_warnings(
+    config: &Config,
+    probe: &probe::SourceProbe,
+    warn_flags: &WarnFlags,
+    out: &mut dyn Write,
+) -> Result<()> {
+    let Some(tracks) = &config.audio.tracks else {
+        return Ok(());
+    };
+
+    let warn_unnormalized =
+        !warn_flags.no_warnings && config.audio.warn_unnormalized_downmix.unwrap_or(true);
+    let warn_redundant = !warn_flags.no_warnings && !warn_flags.no_warn_redundant;
+    if !warn_unnormalized && !warn_redundant {
+        return Ok(());
+    }
+
+    for track in tracks {
+        let Some(src) = track
+            .source
+            .and_then(|s| probe.audio.get(s.saturating_sub(1) as usize))
+        else {
+            continue;
+        };
+
+        let mixdown = track
+            .mixdown
+            .or(config.audio.mixdown)
+            .unwrap_or(crate::config::Mixdown::Stereo);
+        let target_channels = ffmpeg_args::mixdown_to_channels(mixdown);
+        let is_downmix = src.channels > 2 && src.channels > target_channels;
+        let normalize = track
+            .normalize_downmix
+            .or(config.audio.normalize_downmix)
+            .unwrap_or(true);
+        let label = audio_track_label(track);
+
+        if warn_unnormalized && is_downmix && !normalize {
+            writeln!(
+                out,
+                "warning: audio track {} downmixes {} → {} with normalization off; \
+                 dialogue may be quiet. Set normalize_downmix = true (section or \
+                 per-track), or pass --no-warn-unnormalized-downmix to suppress.",
+                label,
+                channels_label(src.channels),
+                channels_label(target_channels),
+            )
+            .map_err(crate::io_render_err)?;
+        }
+
+        if warn_redundant && track.normalize_downmix == Some(true) && !is_downmix {
+            writeln!(
+                out,
+                "warning: audio track {} sets normalize_downmix = true but the source is \
+                 not a surround downmix ({} → {}), so it has no effect. \
+                 Pass --no-warn-redundant to suppress.",
+                label,
+                channels_label(src.channels),
+                channels_label(target_channels),
+            )
+            .map_err(crate::io_render_err)?;
+        }
+    }
+
+    Ok(())
 }
 
 fn audio_track_label(t: &crate::config::AudioTrack) -> String {
@@ -1633,5 +1722,102 @@ mod tests {
             ])),
             "[2 items]"
         );
+    }
+
+    // -------------------------------------------------------------------------
+    // emit_normalize_warnings
+    // -------------------------------------------------------------------------
+
+    fn probe_with_audio(channels: &[u32]) -> probe::SourceProbe {
+        probe::SourceProbe {
+            audio: channels
+                .iter()
+                .map(|&c| probe::AudioStreamInfo {
+                    codec: "aac".into(),
+                    channels: c,
+                    ..Default::default()
+                })
+                .collect(),
+            ..Default::default()
+        }
+    }
+
+    fn run_warnings(cfg: &Config, p: &probe::SourceProbe, flags: WarnFlags) -> String {
+        let mut buf: Vec<u8> = Vec::new();
+        emit_normalize_warnings(cfg, p, &flags, &mut buf).unwrap();
+        String::from_utf8(buf).unwrap()
+    }
+
+    /// (A) Surround downmix with normalization off warns.
+    #[test]
+    fn warns_on_unnormalized_downmix() {
+        let cfg = parse(
+            "[audio]\nnormalize_downmix = false\n\
+             tracks = [{ source = 1, lang = \"eng\", mixdown = \"stereo\" }]\n",
+        );
+        let out = run_warnings(&cfg, &probe_with_audio(&[6]), WarnFlags::default());
+        assert!(out.contains("downmixes"), "got: {}", out);
+        assert!(out.contains("normalization off"), "got: {}", out);
+    }
+
+    /// (A) suppressed by the config field.
+    #[test]
+    fn unnormalized_downmix_warning_suppressed_by_config() {
+        let cfg = parse(
+            "[audio]\nnormalize_downmix = false\nwarn_unnormalized_downmix = false\n\
+             tracks = [{ source = 1, lang = \"eng\", mixdown = \"stereo\" }]\n",
+        );
+        let out = run_warnings(&cfg, &probe_with_audio(&[6]), WarnFlags::default());
+        assert!(out.is_empty(), "expected no warning; got: {}", out);
+    }
+
+    /// (B) Explicit per-track `normalize_downmix = true` on a non-downmix warns.
+    #[test]
+    fn warns_on_noop_per_track_normalize() {
+        let cfg = parse(
+            "[audio]\ntracks = [\
+             { source = 1, lang = \"eng\", mixdown = \"stereo\", normalize_downmix = true }]\n",
+        );
+        let out = run_warnings(&cfg, &probe_with_audio(&[2]), WarnFlags::default());
+        assert!(out.contains("has no effect"), "got: {}", out);
+    }
+
+    /// (B) shares the redundant-override suppression flag.
+    #[test]
+    fn noop_per_track_normalize_suppressed_by_no_warn_redundant() {
+        let cfg = parse(
+            "[audio]\ntracks = [\
+             { source = 1, lang = \"eng\", mixdown = \"stereo\", normalize_downmix = true }]\n",
+        );
+        let flags = WarnFlags {
+            no_warn_redundant: true,
+            ..Default::default()
+        };
+        let out = run_warnings(&cfg, &probe_with_audio(&[2]), flags);
+        assert!(out.is_empty(), "expected no warning; got: {}", out);
+    }
+
+    /// Happy path: real downmix with normalization on emits nothing.
+    #[test]
+    fn no_warning_when_downmix_is_normalized() {
+        let cfg =
+            parse("[audio]\ntracks = [{ source = 1, lang = \"eng\", mixdown = \"stereo\" }]\n");
+        let out = run_warnings(&cfg, &probe_with_audio(&[6]), WarnFlags::default());
+        assert!(out.is_empty(), "expected no warning; got: {}", out);
+    }
+
+    /// The bulk `--no-warnings` flag suppresses both warnings.
+    #[test]
+    fn no_warnings_bulk_suppresses_normalize_warnings() {
+        let cfg = parse(
+            "[audio]\nnormalize_downmix = false\n\
+             tracks = [{ source = 1, lang = \"eng\", mixdown = \"stereo\" }]\n",
+        );
+        let flags = WarnFlags {
+            no_warnings: true,
+            ..Default::default()
+        };
+        let out = run_warnings(&cfg, &probe_with_audio(&[6]), flags);
+        assert!(out.is_empty(), "expected no warning; got: {}", out);
     }
 }
