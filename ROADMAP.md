@@ -69,19 +69,21 @@ Foundation pieces that are working end-to-end. Most have at least light test cov
 - External subtitle tracks (`mux = "external"`): sidecar `.srt`/`.ass` files written next to the output video with Jellyfin-compatible filenames; `on_existing` policy applied per sidecar; duplicate sidecar name detection at validation time; external ASS correctly exempt from the MP4 soft-mux restriction — DESIGN.md §Subtitles > External subtitle tracks. (`pipeline/subtitle_prep.rs`, `validate.rs`.)
 - **`bento repair`** — DESIGN.md §`bento repair`. Structural comparison of user's global config against baked defaults to detect missing fields; text-based surgical insertion preserving all existing content and comments (doc comments from the bootstrap template appended with `# (added by bento repair)` marker); corrupt-config path offers full regeneration; `--yes` flag for non-interactive use. `run_repair_at` is the path-explicit entry point used by integration tests. (`src/repair.rs`, `tests/repair.rs`; 22 unit + 7 integration tests.)
 - **`bento probe <path>` subcommand** — DESIGN.md §CLI. Displays stream info from a video file in Bento-native terms: friendly codec names, resolution, framerate, 1-based type-relative track numbers for audio and subtitles (matching `source =` in config), language codes, channel layout, bitrate, and track titles. Section headers are colored (red/green/blue as a nod to RGB) and track numbers are magenta so users can copy them straight into `bento.toml`. Extended `VideoStreamInfo`, `AudioStreamInfo`, and `SubtitleStreamInfo` in `pipeline/probe.rs` to carry the additional fields; `probe_source_streams` now parses codec, framerate, channel layout, title/language tags, and falls back to the `BPS` stream tag for bitrate (needed for MKV files, which rarely carry `bit_rate` in stream headers). Column widths for language, codec, and channel layout are computed across all tracks so every column aligns. Footer hint reminds users how track numbers map to `source =`. (`src/probe.rs`, `src/pipeline/probe.rs`; 8 unit tests + 1 render integration test.)
+- **Reframe `normalize_mix` → `normalize_downmix` (advisory, downmix-scoped, per-track-overridable) + two warnings + deprecation migration** — DESIGN.md §[audio]. Renamed the field and changed its semantics: `loudnorm` is now applied only on a real surround→fewer-channels downmix (source >2ch and target smaller), is purely advisory (never forces a transcode), and is overridable per `AudioTrack`. Added two warnings — (A) `warn_unnormalized_downmix` (config-implication, gated on probed channel count; CLI `--no-warn-unnormalized-downmix`) and (B) a no-op per-track `normalize_downmix = true` warning sharing `--no-warn-redundant`. `normalize_mix` kept as a `#[serde(alias)]` (non-breaking → 1.1.0); `bento repair` upgrades the key in place via a new section-scoped key-rename table. (`src/config/audio.rs`, `src/resolve.rs`, `src/pipeline/ffmpeg_args.rs`, `src/pipeline/mod.rs`, `src/cli.rs`, `src/repair.rs`, `src/bootstrap.rs`; 6 ffmpeg-args + 2 audio-parse + 6 warning + 5 rename/repair unit tests.) Surfaced 2026-05-26; landed 2026-05-27.
 - **Refactor `pipeline::run_convert_directory` and `pipeline::run_convert_file` to reduce argument counts.** Both functions' 8 and 10 positional args were bundled into a private `ConvertContext<'a>` struct (holding `cli_config`, `output_dir_override`, `dry_run`, `verbosity`, `warn_flags`, `temp_root`). Both functions now take `(…, ctx: &ConvertContext<'_>, out: &mut dyn Write)` — 3 and 5 args respectively. `#[allow(clippy::too_many_arguments)]` and TODO markers removed. (`src/pipeline/mod.rs`; all 45 integration tests still pass.)
+- **Document `bento probe` in the docs site** — DESIGN.md §CLI. New reference page at `docs/content/cli/probe.md`; `cli/_index.md` table updated; `flags.md` weight bumped 5→6. Landed on `main` in commit `87224e9`.
 
 ---
 
 ## In progress
 
-- **Document `bento probe` in the docs site.** New page at `docs/content/cli/probe.md`; `_index.md` table updated; `flags.md` weight bumped from 5→6. Branch: `docs/probe-subcommand`. — ROADMAP.md §Not started.
+*(nothing currently in progress)*
 
 ---
 
 ## Not started
 
-- **Reconsider `normalize_mix` scope and add a sanity warning.** Currently section-only (`Audio` struct in `src/config/audio.rs`; no field on `AudioTrack`). Two things to think through: (1) it arguably should be per-track-overridable like `encoder`/`bitrate`/`mixdown`, since downmix normalization is a per-track concern; (2) it only does anything on surround→stereo downmixes, so setting `normalize_mix = true` when no track targets `mixdown = "stereo"` is likely a mistake worth warning about. Needs more design thought before implementing. Surfaced 2026-05-26 during docs work.
+*(nothing currently queued)*
 
 ---
 
@@ -97,7 +99,7 @@ Anything explicitly deferred in DESIGN.md or surfaced as future work. Move items
 
 Things in the code that don't cleanly map back to DESIGN.md, or design decisions that may have shifted. Resolve these before they accumulate.
 
-*(no open questions currently)*
+- **`warn_unnormalized_downmix` is a config-implication warning gated on a runtime fact.** All other config-implication warnings fire from config alone; this one needs the probed source channel count to know whether a surround downmix actually occurs, so it's emitted post-probe in `run_convert_file` rather than at config-validation time in `validate.rs`. Classed as config-implication (it gets a sticky `warn_*` config field) because suppressing it is an intentional, persistent choice. Recorded as a deliberate new sub-case, not drift — see the † note in DESIGN.md §Warnings index. Revisit if more warnings of this shape appear and a shared mechanism is warranted.
 
 *Resolved 2026-05-19:*
 - ~~ffmpeg-only vs HandBrakeCLI~~ — confirmed intentional. DESIGN.md updated (see §Background, "second note on lineage") to record the pivot to pure ffmpeg.
@@ -105,4 +107,4 @@ Things in the code that don't cleanly map back to DESIGN.md, or design decisions
 
 ---
 
-*Last updated: 2026-05-27. `ConvertContext` refactor complete; moved to Done.*
+*Last updated: 2026-05-27. `normalize_mix` → `normalize_downmix` reframe complete (advisory downmix-scoped loudnorm, per-track override, two warnings, repair key-rename migration); version bumped to 1.1.0. `bento probe` docs promoted to Done.*

@@ -7,15 +7,13 @@ weight = 4
 toc_strip_signatures = true
 +++
 
-The `[audio]` section configures all audio output. It has section-level fields and a `tracks` list describing each output track. Several section-level fields — `encoder`, `bitrate`, `mixdown`, `force_bitrate`, `force_mixdown` — also act as per-track defaults: every track inherits them unless it overrides them individually.
+The `[audio]` section configures all audio output. It has section-level fields and a `tracks` list describing each output track. Several section-level fields — `encoder`, `bitrate`, `mixdown`, `force_bitrate`, `force_mixdown`, `normalize_downmix` — also act as per-track defaults: every track inherits them unless it overrides them individually.
 
 ```
 [audio]
 # Warnings
-warn_no_default  = <bool>
-
-# Section-only fields
-normalize_mix    = <bool>
+warn_no_default           = <bool>
+warn_unnormalized_downmix = <bool>
 
 # All-tracks fields
 encoder          = "aac" | "opus" | "flac"
@@ -23,6 +21,7 @@ bitrate          = <integer>
 mixdown          = "stereo" | "5point1" | "mono" | "dpl2"
 force_mixdown    = <bool>
 force_bitrate    = <bool>
+normalize_downmix = <bool>
 
 # Track fields
 tracks = [
@@ -46,6 +45,7 @@ tracks = [
         mixdown          = "stereo" | "5point1" | "mono" | "dpl2"
         force_bitrate    = <bool>
         force_mixdown    = <bool>
+        normalize_downmix = <bool>
     },
     ...
 ]
@@ -57,9 +57,17 @@ tracks = [
 
 Warn if no track in the list is marked `default = true`. Default `true`. Without a default track, Jellyfin falls back to its own track-selection logic, which may not match your preference. Applies at the section level only — it cannot be set per-track.
 
-### `normalize_mix = <bool>` {#normalize_mix}
+### `warn_unnormalized_downmix = <bool>` {#warn_unnormalized_downmix}
 
-Apply ffmpeg's `loudnorm` filter to surround-to-stereo downmixes. Default `true`. Addresses the quiet-dialogue artifact common in anime surround sources downmixed to stereo. Applies at the section level only — it cannot be set per-track.
+Warn when a track is folded from surround down to fewer channels but `normalize_downmix` resolved to `false` for it, so the downmix runs without loudness compensation (dialogue may end up quiet). Default `true`. Fires only when an actual surround downmix occurs for the source at hand. Suppress with this field or the [`--no-warn-unnormalized-downmix`](@/cli/flags.md) flag. Applies at the section level only.
+
+### `normalize_downmix = <bool>` {#normalize_downmix}
+
+Apply ffmpeg's `loudnorm` filter (`loudnorm=I=-16:TP=-1.5:LRA=11`) when a track is folded from surround down to fewer channels (5.1→stereo, 5.1→mono). Default `true`. Can be overridden on a per-track basis.
+
+It is **advisory**: it never forces a transcode on its own, and does nothing unless a qualifying downmix actually happens — the source must be surround (more than 2 channels) *and* the target layout must have fewer channels. A stereo source going to stereo, or a 5.1 source kept at 5.1, is never affected. When a qualifying downmix transcode happens (for any reason), `loudnorm` rides along.
+
+The filter normalizes the downmix's *overall* program loudness — it is not dialogue-specific — but on surround content mastered for a different listening setup it usually keeps dialogue at a sensible level. Setting it to `true` on a track that won't downmix has no effect and is flagged by the redundant-override warning.
 
 ### `encoder = <option>` {#encoder}
 
@@ -122,6 +130,8 @@ A list of output audio tracks. Each entry describes one track.
     - Overrides the section-level setting for this track.
 - **`force_mixdown = <bool>`**
     - Overrides the section-level setting for this track.
+- **`normalize_downmix = <bool>`**
+    - Overrides the section-level setting for this track. Setting `true` on a track that won't downmix has no effect and is flagged by the redundant-override warning.
 
 Only `default` is uniqueness-enforced. The other dispositions (`forced`, `original`, `commentary`, `hearing_impaired`, `visual_impaired`) are category flags — multiple tracks may set them.
 
@@ -135,7 +145,7 @@ Bento decides automatically whether to copy or re-encode each source audio strea
 2. **Mixdown mismatch** — transcodes when `force_mixdown = true` (default) and the source channel layout differs from `mixdown`.
 3. **Bitrate exceeds target** — transcodes when `force_bitrate = true` and the source bitrate is higher than `bitrate`.
 
-If any condition fires, Bento transcodes using the configured `encoder`, `bitrate`, and `mixdown`. If none fire, Bento copies the stream.
+If any condition fires, Bento transcodes using the configured `encoder`, `bitrate`, and `mixdown`. If none fire, Bento copies the stream. `normalize_downmix` is *not* one of these triggers — it's advisory and only rides along when a transcode that folds surround down to fewer channels is already happening.
 
 The asymmetric defaults reflect a real asymmetry in intent: `mixdown = "stereo"` usually expresses a hard requirement ("I want stereo output"), while `bitrate = 192` is usually a ceiling rather than a trigger — re-encoding 320kbps AAC to 192kbps saves a modest amount of space at the cost of lossy-to-lossy quality degradation. Users who want the bitrate cap can opt in with `force_bitrate = true`.
 
@@ -149,7 +159,7 @@ bitrate = 192
 mixdown = "stereo"
 force_bitrate = false
 force_mixdown = true
-normalize_mix = true
+normalize_downmix = true
 ```
 
 **Directory config (track list with section defaults inherited):**
@@ -162,4 +172,4 @@ tracks = [
 ]
 ```
 
-`encoder`, `bitrate`, `mixdown`, `force_bitrate`, `force_mixdown`, and `normalize_mix` are inherited from the global config. The commentary track overrides `bitrate` for itself only.
+`encoder`, `bitrate`, `mixdown`, `force_bitrate`, `force_mixdown`, and `normalize_downmix` are inherited from the global config. The commentary track overrides `bitrate` for itself only.

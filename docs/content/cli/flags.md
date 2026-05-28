@@ -31,8 +31,9 @@ Each warning has a corresponding `--no-warn-X` flag. A bulk `--no-warnings` flag
 | Lossy ASS → SRT conversion | `[subtitles].warn_ass_to_srt` | `--no-warn-ass-to-srt` |
 | No subtitle or audio track marked `default = true` | `[audio].warn_no_default` / `[subtitles].warn_no_default` | `--no-warn-no-default` |
 | CRF value suspicious for resolved encoder | `[video].warn_crf_codec_mismatch` | `--no-warn-crf-codec-mismatch` |
+| Surround downmix runs without loudness normalization | `[audio].warn_unnormalized_downmix` | `--no-warn-unnormalized-downmix` |
 | Field resolved from built-in default instead of user config | (runtime, no config field) | `--no-warn-missing` |
-| Higher-precedence layer sets a field to the same value as a lower layer | (runtime, no config field) | `--no-warn-redundant` |
+| Higher-precedence layer sets a field to the same value as a lower layer (also a per-track `normalize_downmix = true` that has no effect) | (runtime, no config field) | `--no-warn-redundant` |
 | All of the above | — | `--no-warnings` |
 
 `--no-warn-no-default` suppresses both the audio and subtitle variant in one shot. The CLI is coarser than the config by design — a one-off suppression rarely needs per-section precision.

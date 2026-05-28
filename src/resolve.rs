@@ -264,8 +264,9 @@ pub(crate) fn baked_defaults(resolved_encoder_name: Option<EncoderName>) -> Conf
             mixdown: Some(Mixdown::Stereo),
             force_bitrate: Some(false),
             force_mixdown: Some(true),
-            normalize_mix: Some(true),
+            normalize_downmix: Some(true),
             warn_no_default: Some(true),
+            warn_unnormalized_downmix: Some(true),
             tracks: None,
         },
         subtitles: Subtitles {
@@ -405,8 +406,12 @@ impl Merge for Audio {
         replace_if_some(&mut self.mixdown, higher.mixdown);
         replace_if_some(&mut self.force_bitrate, higher.force_bitrate);
         replace_if_some(&mut self.force_mixdown, higher.force_mixdown);
-        replace_if_some(&mut self.normalize_mix, higher.normalize_mix);
+        replace_if_some(&mut self.normalize_downmix, higher.normalize_downmix);
         replace_if_some(&mut self.warn_no_default, higher.warn_no_default);
+        replace_if_some(
+            &mut self.warn_unnormalized_downmix,
+            higher.warn_unnormalized_downmix,
+        );
         // Lists wholesale-replace: any higher-layer list shadows the lower list.
         replace_if_some(&mut self.tracks, higher.tracks);
     }

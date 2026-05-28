@@ -148,11 +148,14 @@ Warnings fall into two classes, with different toggle semantics:
 | No subtitle track marked `default = true` | config-implication | `[subtitles].warn_no_default` |
 | No audio track marked `default = true` | config-implication | `[audio].warn_no_default` |
 | `encoder.crf` value suspicious for resolved `encoder.name` | config-implication | `[video].warn_crf_codec_mismatch` |
+| Surround downmix runs without loudness normalization (`normalize_downmix` off) | config-implication† | `[audio].warn_unnormalized_downmix` |
 | Field resolved from baked-in default rather than user config | runtime | `--no-warn-missing` (CLI-only) |
-| Higher-precedence layer sets a field to the same value as a lower layer | runtime | `--no-warn-redundant` (CLI-only) |
+| Higher-precedence layer sets a field to the same value as a lower layer; also a per-track `normalize_downmix = true` with no effect | runtime | `--no-warn-redundant` (CLI-only) |
 | Sidecar config already exists when `--generate-config` is passed | runtime | none (intentional exception) |
 
 The "sidecar exists" warning is the documented exception to the runtime-warning suppression rule: it has no dedicated `--no-warn-X` flag. It fires only when the user has explicitly opted in via `--generate-config`, so a flag to suppress a warning about your own flag not working would be silly. The bulk `--no-warnings` flag (see CLI Surface) does suppress it, however — that flag is the explicit "silence everything for this run" affordance, and the per-warning-flag exception logic doesn't extend to bulk suppression.
+
+† `warn_unnormalized_downmix` is classed as config-implication — it gets a sticky config field because suppressing it is an intentional, persistent choice about a configuration — but unlike the other config-implication warnings it depends on a runtime fact (the source's channel count), so it can only fire once the source is probed. It's the first warning of this "config-implication gated by a runtime fact" shape.
 
 CLI flag names for config-implication warnings are settled in the Warning suppression section under CLI Surface; the config field names above are stable.
 
@@ -290,11 +293,14 @@ A single section governing all audio output. Contains section-level defaults and
 - `mixdown` — `"stereo"`, `"5point1"`, `"mono"`, or `"dpl2"`. Default `"stereo"`.
 - `force_bitrate` — when `true`, transcode if source bitrate exceeds the target `bitrate`. Default `false` (bitrate alone never triggers transcoding).
 - `force_mixdown` — when `true`, transcode if source channel layout differs from `mixdown`. Default `true` (a configured `mixdown` is treated as a requirement).
+- `normalize_downmix` — apply ffmpeg's `loudnorm` filter (`loudnorm=I=-16:TP=-1.5:LRA=11`) when a track is folded from surround down to fewer channels. Default `true`. **Advisory, not a transcode trigger:** it never forces a transcode on its own, and applies only when a qualifying downmix actually happens — the source is surround (>2 channels) *and* the target layout has fewer channels (5.1→stereo, 5.1→mono qualify; stereo→mono and same/upmix do not). When that downmix transcode happens for any reason, `loudnorm` rides along. The filter normalizes the downmix's *overall* program loudness — it is not dialogue-specific, but on surround content mastered for a different listening setup it usually keeps dialogue at a sensible level. Renamed from `normalize_mix` in 1.1; the old name is still accepted as an alias (see "Deprecated keys" below).
+
+  *Pre-1.1, this was a section-only field that applied `loudnorm` to every transcoded track and forced a transcode on copy-eligible tracks. Both behaviors were dropped: the filter is now scoped to actual downmixes and is purely advisory.*
 
 **Section-only fields (do not cascade — not per-track concepts):**
 
-- `normalize_mix` — apply ffmpeg's `loudnorm` filter to combat quiet-dialogue artifacts in surround-to-stereo downmixes. Default `true` (anime dialogue is the use case).
 - `warn_no_default` — when `true` (default), Bento warns if no track in the list is marked `default = true`. Without a default, Jellyfin (or whichever player) falls back to its own track-selection logic, which may not match user expectation. Suppressed by setting to `false`.
+- `warn_unnormalized_downmix` — when `true` (default), Bento warns when a track is downmixed from surround but `normalize_downmix` resolved to `false` for it, so the downmix runs without loudness compensation (dialogue may end up quiet). This is a config-implication warning gated on a runtime fact (the source's channel count), so it fires only when an actual surround downmix occurs. Suppressed by setting to `false` or via `--no-warn-unnormalized-downmix`.
 
 **Per-track fields:**
 
@@ -307,7 +313,7 @@ A single section governing all audio output. Contains section-level defaults and
 - `commentary` — marks the track as commentary (director's commentary, cast commentary). Surfaced in Jellyfin's UI as such.
 - `hearing_impaired` — disposition for dialogue-emphasized mixes intended for hard-of-hearing listeners. Rare on audio (the role is more often filled by SDH subtitles), but valid in both MP4 and MKV.
 - `visual_impaired` — audio description track for blind or low-vision viewers. Standard MKV `flag-visual-impaired` and the MP4 equivalent.
-- `encoder`, `bitrate`, `mixdown`, `force_bitrate`, `force_mixdown` — override section-level defaults.
+- `encoder`, `bitrate`, `mixdown`, `force_bitrate`, `force_mixdown`, `normalize_downmix` — override section-level defaults. Setting `normalize_downmix = true` on a track that won't downmix (the source isn't surround, or the target isn't smaller) has no effect; Bento flags this likely-mistake via the redundant-override warning (suppressed by `--no-warn-redundant`).
 
 **Multiple-disposition behavior:** Only `default` is uniqueness-enforced. The other dispositions (`forced`, `original`, `commentary`, `hearing_impaired`, `visual_impaired`) are category flags, not singletons — multiple tracks may set them. Multilingual content, multi-commentary releases, and audio descriptions in multiple languages all legitimately produce multi-flagged outputs.
 
@@ -332,7 +338,7 @@ bitrate = 192
 mixdown = "stereo"
 force_bitrate = false
 force_mixdown = true
-normalize_mix = true
+normalize_downmix = true
 ```
 
 **Example: directory config (track list, sparing overrides):**
@@ -346,7 +352,9 @@ tracks = [
 ]
 ```
 
-The directory config inherits `encoder`, `bitrate`, `mixdown`, `force_bitrate`, `force_mixdown`, and `normalize_mix` from the global config. The commentary track overrides `bitrate` for itself only; the other two tracks use the section default. With the default flags (`force_mixdown = true`, `force_bitrate = false`), source AAC tracks already in stereo are copied directly regardless of source bitrate; AAC tracks in 5.1 are transcoded down to stereo; non-AAC tracks are transcoded to AAC.
+The directory config inherits `encoder`, `bitrate`, `mixdown`, `force_bitrate`, `force_mixdown`, and `normalize_downmix` from the global config. The commentary track overrides `bitrate` for itself only; the other two tracks use the section default. With the default flags (`force_mixdown = true`, `force_bitrate = false`), source AAC tracks already in stereo are copied directly regardless of source bitrate; AAC tracks in 5.1 are transcoded down to stereo (and loudness-normalized, since that's a qualifying downmix); non-AAC tracks are transcoded to AAC.
+
+**Deprecated keys.** `normalize_mix` was renamed to `normalize_downmix` in 1.1 (the rename also reflected a behavior change — see the field description above). The old name is still accepted as a serde alias, so existing configs keep working without a major-version bump. `bento repair` upgrades the key in place (rewriting `normalize_mix` → `normalize_downmix` in the global config text, preserving its value and comment) and prints a deprecation notice. The rename is registered in a small key-rename table in `repair.rs` kept in sync with the field's `#[serde(alias)]`; future renames follow the same two-part pattern (alias keeps it parsing, repair-table upgrades the text).
 
 ### `[subtitles]`
 
@@ -757,8 +765,9 @@ Each warning in the warnings index has a corresponding `--no-warn-X` CLI flag, m
 | config-implication | `[subtitles].warn_ass_to_srt` | `--no-warn-ass-to-srt` |
 | config-implication | `[audio].warn_no_default` & `[subtitles].warn_no_default` | `--no-warn-no-default` |
 | config-implication | `[video].warn_crf_codec_mismatch` | `--no-warn-crf-codec-mismatch` |
+| config-implication | `[audio].warn_unnormalized_downmix` | `--no-warn-unnormalized-downmix` |
 | runtime | (resolved-from-default) | `--no-warn-missing` |
-| runtime | (redundant-override; single-field or whole-list) | `--no-warn-redundant` |
+| runtime | (redundant-override; single-field or whole-list; also no-op per-track `normalize_downmix`) | `--no-warn-redundant` |
 | bulk | n/a | `--no-warnings` |
 
 A few specific properties:
