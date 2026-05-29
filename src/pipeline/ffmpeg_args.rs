@@ -38,16 +38,26 @@ fn applies_downmix_normalize(normalize: bool, source_channels: u32, target_chann
 
 /// Decide whether to copy or transcode one audio track.
 ///
-/// Transcoding is required when any of these hold:
-/// - `force_bitrate` is true
-/// - `force_mixdown` is true
-/// - source codec doesn't match the target encoder
-/// - source has more channels than the target mixdown
-/// - source bitrate exceeds the target
+/// Three independent transcode triggers per DESIGN.md > [audio] > "Copy vs.
+/// transcode":
+/// 1. **Codec mismatch** — always triggers.
+/// 2. **Mixdown mismatch** — only if `force_mixdown` is true *and* the source
+///    channel layout actually differs from the target.
+/// 3. **Bitrate exceeds target** — only if `force_bitrate` is true *and* the
+///    source bitrate actually exceeds the target.
+///
+/// A bare channel or bitrate mismatch without its corresponding `force_*` flag
+/// is **not** a trigger — `mixdown` and `bitrate` are then advisory targets
+/// that apply only if some other trigger forces a transcode. In particular,
+/// under the baked-in defaults (`force_mixdown = true`, `force_bitrate = false`)
+/// a stereo-AAC source with a stereo-AAC target copies, and a 320 kbps source
+/// with a 192 kbps target also copies — matching the worked example in
+/// DESIGN.md §[audio].
 ///
 /// `normalize_downmix` is *not* a transcode trigger — it's advisory and only
 /// rides along on a transcode that's already happening for one of the reasons
-/// above (and only when that transcode is a qualifying downmix).
+/// above, and only when that transcode is a qualifying surround→fewer-channels
+/// downmix.
 pub fn decide_audio_action(
     track: &AudioTrack,
     section: &Audio,
@@ -77,29 +87,27 @@ pub fn decide_audio_action(
         .unwrap_or(true);
     let normalize = applies_downmix_normalize(normalize_flag, source.channels, target_channels);
 
-    let transcode = AudioAction::Transcode {
-        encoder: audio_encoder_to_ffmpeg(encoder).to_string(),
-        bitrate_kbps: target_bitrate,
-        channels: target_channels,
-        use_dpl2,
-        normalize,
-    };
-
-    if force_bitrate || force_mixdown {
-        return transcode;
-    }
-
-    let codec_ok = source.codec == encoder;
-    let channels_ok = source.channels <= target_channels;
-    let bitrate_ok = source
+    let codec_mismatch = source.codec != encoder;
+    let layout_mismatch = source.channels != target_channels;
+    let bitrate_exceeds = source
         .bitrate_kbps
-        .map(|src| src <= target_bitrate)
-        .unwrap_or(true);
+        .map(|src| src > target_bitrate)
+        .unwrap_or(false);
 
-    if codec_ok && channels_ok && bitrate_ok {
-        AudioAction::Copy
+    let must_transcode = codec_mismatch
+        || (force_mixdown && layout_mismatch)
+        || (force_bitrate && bitrate_exceeds);
+
+    if must_transcode {
+        AudioAction::Transcode {
+            encoder: audio_encoder_to_ffmpeg(encoder).to_string(),
+            bitrate_kbps: target_bitrate,
+            channels: target_channels,
+            use_dpl2,
+            normalize,
+        }
     } else {
-        transcode
+        AudioAction::Copy
     }
 }
 
@@ -597,6 +605,7 @@ mod tests {
     }
 
     /// A surround→stereo downmix transcode carries `normalize = true`.
+    /// Uses `force_mixdown = true` (the baked-in default) to gate the trigger.
     #[test]
     fn surround_to_stereo_downmix_normalizes() {
         let track = AudioTrack::default();
@@ -604,6 +613,7 @@ mod tests {
             encoder: Some("aac".to_string()),
             bitrate: Some(192),
             mixdown: Some(Mixdown::Stereo),
+            force_mixdown: Some(true),
             normalize_downmix: Some(true),
             ..Default::default()
         };
@@ -625,6 +635,7 @@ mod tests {
             encoder: Some("aac".to_string()),
             bitrate: Some(192),
             mixdown: Some(Mixdown::Mono),
+            force_mixdown: Some(true),
             normalize_downmix: Some(true),
             ..Default::default()
         };
@@ -675,6 +686,7 @@ mod tests {
             encoder: Some("aac".to_string()),
             bitrate: Some(192),
             mixdown: Some(Mixdown::Stereo),
+            force_mixdown: Some(true),
             normalize_downmix: Some(true),
             ..Default::default()
         };
@@ -707,13 +719,16 @@ mod tests {
         ));
     }
 
+    /// With `force_mixdown = true` (the production default), a 5.1 source against
+    /// a stereo target triggers a downmix transcode.
     #[test]
-    fn transcode_on_channel_downmix_needed() {
+    fn force_mixdown_with_layout_diff_transcodes() {
         let track = AudioTrack::default();
         let section = Audio {
             encoder: Some("aac".to_string()),
             bitrate: Some(192),
             mixdown: Some(Mixdown::Stereo),
+            force_mixdown: Some(true),
             ..Default::default()
         };
         let src = aac_stream(Some(128), 6); // 5.1 source → downmix to stereo
@@ -723,8 +738,10 @@ mod tests {
         ));
     }
 
+    /// With `force_bitrate = true` and a source bitrate that actually exceeds
+    /// the target, a transcode is triggered.
     #[test]
-    fn transcode_when_force_bitrate() {
+    fn force_bitrate_with_source_above_target_transcodes() {
         let track = AudioTrack {
             force_bitrate: Some(true),
             ..Default::default()
@@ -734,11 +751,98 @@ mod tests {
             bitrate: Some(192),
             ..Default::default()
         };
-        let src = aac_stream(Some(192), 2);
+        let src = aac_stream(Some(256), 2); // source bitrate strictly above target
         assert!(matches!(
             decide_audio_action(&track, &section, &src),
             AudioAction::Transcode { .. }
         ));
+    }
+
+    // --- Spec-correct flag-gating (DESIGN.md §[audio] > Copy vs. transcode) ----
+
+    /// Canonical worked example from DESIGN.md §[audio]: with the baked-in
+    /// defaults (`force_mixdown = true`, `force_bitrate = false`), a stereo AAC
+    /// source matching the stereo AAC target is copied, regardless of the
+    /// `normalize_downmix` flag (which does nothing on a non-downmix copy).
+    #[test]
+    fn default_resolved_section_copies_matching_stereo_aac() {
+        let track = AudioTrack::default();
+        let section = Audio {
+            encoder: Some("aac".to_string()),
+            bitrate: Some(192),
+            mixdown: Some(Mixdown::Stereo),
+            force_bitrate: Some(false),
+            force_mixdown: Some(true),
+            normalize_downmix: Some(true),
+            ..Default::default()
+        };
+        let src = aac_stream(Some(192), 2);
+        assert_eq!(
+            decide_audio_action(&track, &section, &src),
+            AudioAction::Copy
+        );
+    }
+
+    /// `force_bitrate = true` with a source bitrate equal to (or below) the
+    /// target is NOT a trigger — source must strictly exceed the target.
+    #[test]
+    fn force_bitrate_with_source_at_or_below_target_copies() {
+        let track = AudioTrack::default();
+        let section = Audio {
+            encoder: Some("aac".to_string()),
+            bitrate: Some(192),
+            force_bitrate: Some(true),
+            ..Default::default()
+        };
+        // Equal — must copy.
+        let eq_src = aac_stream(Some(192), 2);
+        assert_eq!(
+            decide_audio_action(&track, &section, &eq_src),
+            AudioAction::Copy
+        );
+        // Below — must copy.
+        let lo_src = aac_stream(Some(128), 2);
+        assert_eq!(
+            decide_audio_action(&track, &section, &lo_src),
+            AudioAction::Copy
+        );
+    }
+
+    /// `force_bitrate = false` means a source bitrate above the target does NOT
+    /// trigger a transcode — `bitrate` is a target ceiling for transcoding only.
+    #[test]
+    fn force_bitrate_false_with_source_above_target_copies() {
+        let track = AudioTrack::default();
+        let section = Audio {
+            encoder: Some("aac".to_string()),
+            bitrate: Some(192),
+            force_bitrate: Some(false),
+            ..Default::default()
+        };
+        let src = aac_stream(Some(320), 2);
+        assert_eq!(
+            decide_audio_action(&track, &section, &src),
+            AudioAction::Copy
+        );
+    }
+
+    /// `force_mixdown = false` makes `mixdown` advisory: a layout mismatch by
+    /// itself does NOT trigger a transcode.
+    #[test]
+    fn force_mixdown_false_with_layout_diff_copies() {
+        let track = AudioTrack::default();
+        let section = Audio {
+            encoder: Some("aac".to_string()),
+            bitrate: Some(192),
+            mixdown: Some(Mixdown::Stereo),
+            force_mixdown: Some(false),
+            ..Default::default()
+        };
+        let src = aac_stream(Some(192), 6); // 5.1 source against stereo target
+        assert_eq!(
+            decide_audio_action(&track, &section, &src),
+            AudioAction::Copy
+        );
     }
 
     #[test]
