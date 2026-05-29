@@ -94,9 +94,8 @@ pub fn decide_audio_action(
         .map(|src| src > target_bitrate)
         .unwrap_or(false);
 
-    let must_transcode = codec_mismatch
-        || (force_mixdown && layout_mismatch)
-        || (force_bitrate && bitrate_exceeds);
+    let must_transcode =
+        codec_mismatch || (force_mixdown && layout_mismatch) || (force_bitrate && bitrate_exceeds);
 
     if must_transcode {
         AudioAction::Transcode {
