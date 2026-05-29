@@ -80,20 +80,73 @@ Under `--dry-run`, this flag is a no-op (dry-run produces nothing to keep).
 
 ### `--overwrite` / `-f`
 
-Shorthand for `--on-existing=overwrite`. Replaces existing output files without warning.
+Shorthand for `--on-existing=overwrite` — the most common case, "rerun with new settings, replace the old outputs." Mutually exclusive with `--on-existing`; passing both is a CLI error, even if the values would agree.
 
-### `--on-existing=VALUE`
+### `--on-existing=VALUE` {#on-existing}
 
-Override `[output].on_existing` for this run. Values: `warn`, `skip-silently`, `overwrite`, `fail` (kebab-case). Mutually exclusive with `--overwrite` / `-f`.
+Override the resolved `[output].on_existing` for this run. CLI flags are the highest-precedence configuration layer, above all config files.
 
-### `--set KEY=VALUE`
+| CLI value | Config value | Behavior |
+|---|---|---|
+| `warn` | `"warn"` | Print a warning, leave the existing file, continue. |
+| `skip-silently` | `"skip_silently"` | Leave the existing file silently, continue. |
+| `overwrite` | `"overwrite"` | Replace without warning. |
+| `fail` | `"fail"` | Abort the run. |
 
-Override a config field at any dotted path. See [CLI Reference](@/cli/_index.md) for semantics.
+Values are kebab-case at the CLI, snake_case in config.
 
-### Warning suppression
+### `--set KEY=VALUE` {#set}
 
-See [Flags](@/cli/flags.md) for the full `--no-warn-*` and `--no-warnings` reference.
+The generic override mechanism: set any scalar config field by dotted path. `KEY` is a path into the config schema (e.g. `video.encoder.crf`, `audio.bitrate`); `VALUE` is parsed as a TOML scalar. May be repeated.
 
-### Verbosity
+```sh
+bento convert ./ --set video.encoder.crf=18
+bento convert ./ --set output.container="mkv"
+bento convert ./ --set audio.bitrate=256 --set video.preset="slow"
+```
 
-`--verbose` / `-v` and `--quiet` / `-q`. See [Flags](@/cli/flags.md).
+| Type | Example |
+|---|---|
+| Integer | `--set video.encoder.crf=18` |
+| Boolean | `--set output.preserve_chapters=false` |
+| String | `--set output.container="mkv"` (quotes required for strings) |
+
+Bare unquoted strings are not accepted. Overrides resolve at the leaf level, consistent with the config cascade: `--set video.encoder.crf=22` overrides only `crf`, while `name` and `tune` fall through to lower layers.
+
+Track lists (`audio.tracks`, `subtitles.tracks`) are not addressable via `--set`. Use a `<videofile>.bento.toml` sidecar for per-file track changes.
+
+### Warning suppression {#warning-suppression}
+
+Each warning has a corresponding `--no-warn-X` flag. A bulk `--no-warnings` flag suppresses everything in one shot.
+
+| Warning | Config field | CLI flag |
+|---|---|---|
+| Multiple `mux = "burn"` subtitle tracks | `[subtitles].warn_multiple_burns` | `--no-warn-multiple-burns` |
+| Burn track with soft-track metadata fields | `[subtitles].warn_burn_metadata` | `--no-warn-burn-metadata` |
+| Lossy ASS → SRT conversion | `[subtitles].warn_ass_to_srt` | `--no-warn-ass-to-srt` |
+| No subtitle or audio track marked `default = true` | `[audio].warn_no_default` / `[subtitles].warn_no_default` | `--no-warn-no-default` |
+| CRF value suspicious for resolved encoder | `[video].warn_crf_codec_mismatch` | `--no-warn-crf-codec-mismatch` |
+| Surround downmix runs without loudness normalization | `[audio].warn_unnormalized_downmix` | `--no-warn-unnormalized-downmix` |
+| Field resolved from built-in default instead of user config | (runtime, no config field) | `--no-warn-missing` |
+| Higher-precedence layer sets a field to the same value as a lower layer (also a per-track `normalize_downmix = true` that has no effect) | (runtime, no config field) | `--no-warn-redundant` |
+| All of the above | — | `--no-warnings` |
+
+`--no-warn-no-default` suppresses both the audio and subtitle variant in one shot — the CLI is coarser than the config by design, since a one-off suppression rarely needs per-section precision.
+
+There is no `--warn-X` form. All warnings default on; to re-enable one disabled in config, use `--set audio.warn_no_default=true` (or the relevant dotted path). `--no-warnings` is deliberately not mirrored as a config field: a persistent "suppress everything forever" would mask real problems silently, so the flag keeps the choice visible per-invocation.
+
+**Warnings are independent of verbosity.** `-q` does not suppress warnings — use `--no-warn-*` for that. Conflating the two would mean scripted runs with `-q` could silently miss real anomalies.
+
+### Verbosity {#verbosity}
+
+`--verbose` / `-v` and `--quiet` / `-q` are mutually exclusive.
+
+| Level | Errors | Warnings | Per-file output | Encoder progress | Provenance / commands |
+|---|---|---|---|---|---|
+| `--quiet` / `-q` | Yes | Yes | None | None | None |
+| (default) | Yes | Yes | Layer-count summary line | Brief in-place line (TTY) or one line per update | None |
+| `--verbose` / `-v` | Yes | Yes | Full per-field provenance table | Full `ffmpeg` output | `ffmpeg` command lines per file |
+
+**TTY detection.** Default-mode progress uses carriage-return in-place updates on a TTY, falling back to one-line-per-update otherwise (so `bento convert ./ > log.txt` produces a readable log).
+
+**Run summary always shown.** The end-of-batch `8 succeeded, 2 failed` line is shown in all modes, including `-q`.
