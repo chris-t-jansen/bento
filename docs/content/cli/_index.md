@@ -1,6 +1,6 @@
 +++
 title = "CLI Reference"
-description = "Bento's five subcommands and their flags."
+description = "Bento's five subcommands — running encodes, inspecting config, and probing source files."
 sort_by = "weight"
 weight = 5
 +++

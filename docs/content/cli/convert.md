@@ -1,11 +1,10 @@
 +++
-title = "bento convert"
-description = "Run the full conversion pipeline against a file or directory."
+title = "convert"
 weight = 1
 +++
 
 ```
-bento convert <path> [output_dir]
+bento convert [options] <path> [output_dir]
 ```
 
 The primary command. Runs the full pipeline — config resolution, validation, extract, derive, transcode, mux — for one file or a whole directory.
@@ -19,7 +18,7 @@ The primary command. Runs the full pipeline — config resolution, validation, e
 
 When `<path>` is a directory, Bento processes every video file it contains (non-recursive) by extension: `.mkv`, `.mp4`, `.m4v`, `.avi`, `.mov`, `.webm`, `.ts`, `.m2ts`, `.wmv`. To process a file with a non-standard extension, pass it directly as `<path>`.
 
-## Batch behavior
+## Description
 
 Files in a directory are processed sequentially. Per-file errors (config validation failure, ffmpeg error) are logged and the batch continues. Environmental errors that would affect all remaining files (missing `ffmpeg`, disk full) abort the run.
 
@@ -33,7 +32,7 @@ At the end of a batch, Bento always prints a summary regardless of verbosity:
 
 Exit code is non-zero if any file failed.
 
-## Flags
+## Options
 
 ### `--dry-run` / `-n`
 
@@ -150,3 +149,19 @@ There is no `--warn-X` form. All warnings default on; to re-enable one disabled 
 **TTY detection.** Default-mode progress uses carriage-return in-place updates on a TTY, falling back to one-line-per-update otherwise (so `bento convert ./ > log.txt` produces a readable log).
 
 **Run summary always shown.** The end-of-batch `8 succeeded, 2 failed` line is shown in all modes, including `-q`.
+
+## Examples
+
+```sh
+bento convert episode01.mkv                          # one file, using the resolved config
+bento convert ./                                     # every video in the current directory
+bento convert ./ ~/encoded                           # override the output destination
+bento convert ./ --dry-run                           # preview the plan without encoding
+bento convert ep.mkv --set video.encoder.crf=18 -f   # one-off override, replace outputs
+```
+
+## See also
+
+- [`config`](@/cli/config.md) — see the resolved config and where each value came from.
+- [`probe`](@/cli/probe.md) — find the track numbers to reference in your config.
+- [Configuration overview](@/configuration/overview.md) — how the config layers resolve.
