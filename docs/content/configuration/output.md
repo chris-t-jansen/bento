@@ -54,7 +54,7 @@ What to do when the target output file already exists. Default `"warn"`.
 - **`"overwrite"`** — Replace the existing file without warning.
 - **`"fail"`** — Abort the entire run.
 
-The `--overwrite` / `-f` CLI flag and `--on-existing=VALUE` override this per-run. See [Flags](@/cli/flags.md).
+The `--overwrite` / `-f` CLI flag and `--on-existing=VALUE` override this per-run. See [`bento convert`](@/cli/convert.md#on-existing).
 
 ### `metadata = <inline table>` {#metadata}
 

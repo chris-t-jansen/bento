@@ -59,7 +59,7 @@ Warn if no track in the list is marked `default = true`. Default `true`. Without
 
 ### `warn_unnormalized_downmix = <bool>` {#warn_unnormalized_downmix}
 
-Warn when a track is folded from surround down to fewer channels but `normalize_downmix` resolved to `false` for it, so the downmix runs without loudness compensation (dialogue may end up quiet). Default `true`. Fires only when an actual surround downmix occurs for the source at hand. Suppress with this field or the [`--no-warn-unnormalized-downmix`](@/cli/flags.md) flag. Applies at the section level only.
+Warn when a track is folded from surround down to fewer channels but `normalize_downmix` resolved to `false` for it, so the downmix runs without loudness compensation (dialogue may end up quiet). Default `true`. Fires only when an actual surround downmix occurs for the source at hand. Suppress with this field or the [`--no-warn-unnormalized-downmix`](@/cli/convert.md#warning-suppression) flag. Applies at the section level only.
 
 ### `normalize_downmix = <bool>` {#normalize_downmix}
 

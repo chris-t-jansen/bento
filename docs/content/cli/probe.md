@@ -1,6 +1,5 @@
 +++
-title = "bento probe"
-description = "Inspect a video file's streams in Bento-native terms."
+title = "probe"
 weight = 5
 +++
 
@@ -10,7 +9,13 @@ bento probe <path>
 
 Displays stream information for a video file — codec, resolution, framerate, language, channel layout, bitrate, and track titles — using the same terminology Bento uses internally. Designed to answer "what's in this file, and how do I reference it in my config?"
 
-## What it shows
+## Arguments
+
+| Argument | Description |
+|---|---|
+| `<path>` | Path to a video file. |
+
+## Description
 
 Output is divided into three sections: **Video**, **Audio**, and **Subtitles**.
 
@@ -22,7 +27,7 @@ Output is divided into three sections: **Video**, **Audio**, and **Subtitles**.
 
 All track numbers are **1-based and type-relative** — audio tracks are numbered separately from subtitle tracks, starting at 1 each. These numbers map directly to `source =` in your `bento.toml`.
 
-## Example
+## Examples
 
 ```
 $ bento probe "Cowboy Bebop - S01E01 [BD 1080p].mkv"
@@ -65,8 +70,13 @@ tracks = [
 ]
 ```
 
-## When to run
+## When to use it
 
 - **Before writing a directory config** — identify what tracks are available and what their source indices are.
 - **When a source file behaves unexpectedly** — confirm the actual stream layout matches what your config expects.
 - **When inheriting someone else's config** — verify the track numbers still match the files you're working with.
+
+## See also
+
+- [`config`](@/cli/config.md) — confirm how those track numbers resolved in your config.
+- [Audio configuration](@/configuration/audio.md) and [Subtitles configuration](@/configuration/subtitles.md) — how `source =` selects tracks.

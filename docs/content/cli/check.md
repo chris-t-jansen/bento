@@ -1,6 +1,5 @@
 +++
-title = "bento check"
-description = "Verify external dependencies and the global config."
+title = "check"
 weight = 3
 +++
 
@@ -10,7 +9,7 @@ bento check [-y]
 
 Verifies that Bento's external dependencies are present and usable, and that the global config exists.
 
-## What it checks
+## Description
 
 **`ffmpeg` and `ffprobe`:** Confirms both are on `PATH` and checks their versions against:
 
@@ -28,16 +27,28 @@ If `ffmpeg` is missing entirely, Bento prints platform-appropriate install hints
 
 **Global config:** Confirms `~/.config/bento/config.toml` (or the platform equivalent) exists and is parseable. If it's missing, Bento offers to generate it.
 
-## Flags
+Version checking runs only on `bento check`, not on every encode invocation — that keeps `bento convert` startup fast.
+
+## Options
 
 ### `-y` / `--yes`
 
 Auto-confirm the global config generate prompt. In non-interactive contexts (no TTY) without `-y`, `check` errors rather than hanging.
 
-## When to run
+## Examples
+
+```sh
+bento check        # interactive: offers to create the global config if missing
+bento check -y     # scripted / CI: auto-create the config, never prompt
+```
+
+## When to use it
 
 - **After installing Bento** — generates the global config and confirms `ffmpeg` is set up.
 - **After upgrading `ffmpeg`** — confirms the new version is compatible.
 - **After accidentally breaking the global config** — re-run to validate and offer to regenerate.
 
-Version checking does not run on every encode invocation — only on `bento check` — to avoid startup latency.
+## See also
+
+- [`repair`](@/cli/repair.md) — populate missing fields in an existing global config.
+- [Installation](@/getting-started/installation.md) — installing `ffmpeg` and building Bento.

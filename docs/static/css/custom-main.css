@@ -70,3 +70,27 @@ pre code:not([data-lang]) {
     margin: -1.5rem;   /* pull out to pre's padding edges (pre uses p-6 = 1.5rem) */
     padding: 1.5rem;   /* restore visual inset so text isn't flush with the border */
 }
+
+/*
+ * Render the CLI Reference sidebar entries (convert, config, check, repair,
+ * probe) in a monospace font so they read as commands rather than prose. The
+ * page titles are stored bare (e.g. "convert"); the full `bento convert ...`
+ * invocation lives in each page's synopsis block.
+ *
+ * Scoped by href so it touches only the command leaves: every CLI page URL
+ * contains "/cli/", and :not([href$="/cli/"]) excludes the "CLI Reference"
+ * section parent (whose URL ends in "/cli/"). Other sections are unaffected.
+ */
+.menu.sidebar a[href*="/cli/"]:not([href$="/cli/"]) {
+    font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+}
+
+/*
+ * The theme renders the page-title subtitle unconditionally as
+ * <p class="text-gray-500">{{ page.description }}</p>. CLI Reference pages
+ * intentionally carry no `description` (the lead paragraph covers it), so
+ * hide the resulting empty element to avoid a stray gap under the H1.
+ */
+p.text-gray-500:empty {
+    display: none;
+}
