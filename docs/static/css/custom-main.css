@@ -45,8 +45,8 @@ h1 {
 }
 
 /*
- * Quick reference code blocks (no language specifier) scroll horizontally
- * rather than wrapping. Two changes are required:
+ * All code blocks scroll horizontally rather than wrapping. Two changes are
+ * required:
  *
  * 1. main.prose is a grid item in the theme's 1fr/250px layout. Grid items
  *    default to min-width: auto, which lets them expand past the column
@@ -63,7 +63,7 @@ main.prose {
     min-width: 0;
 }
 
-pre code:not([data-lang]) {
+pre code {
     display: block;
     overflow-x: auto;
     white-space: pre;
