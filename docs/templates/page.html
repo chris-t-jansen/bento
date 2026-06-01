@@ -1,0 +1,341 @@
+{% extends "index.html" %}
+{% import "macros/utils.html" as utils %}
+
+{% set config_file = load_data(path="/config.toml", format="toml", required=false) %}
+{% if not config_file %}
+    {% set config_file = load_data(path="/config.yaml", format="yaml", required=false) %}
+{% endif %}
+{% if not config_file %}
+    {% set config_file = load_data(path="/config.yml", format="yaml", required=false) %}
+{% endif %}
+
+{% block header %}
+    {{ macros_header::header(config=config, lang=lang, page=page) }}
+{% endblock header %}
+
+{% block content %}
+    <div class="mb-12 pb-4 border-b border-gray-500/15">
+        <h1 class="flex items-center gap-3">
+            {{ page.title }}
+            {% if page.extra.badge %}
+                <span class="text-sm font-normal px-2 py-0.5 border border-gray-500/30 rounded">{{ page.extra.badge }}</span>
+            {% endif %}
+        </h1>
+        <p class="text-gray-500">{{ page.description }}</p>
+    </div>
+    {{ page.content | safe }}
+
+    <!--  Errata section  -->
+    {# --- START: AUTOMATIC ERRATA SECTION --- #}
+    {% if page.extra.errata %}
+    {% set badge_light = config.extra.errata_badge_light | default(value="badge-soft badge-accent") %}
+    {% set badge_dark  = config.extra.errata_badge_dark  | default(value="badge-soft badge-accent") %}
+
+    <div class="errata mt-12 pt-6">
+        <h2 class="text-2xl font-bold mb-6 flex items-center gap-2">
+            <span class="text-warning">⚠</span> {{ utils::trans_or_default(key="errata_section", default="Errata & Updates", lang=lang, config=config, config_file=config_file) }}
+        </h2>
+
+        <div class="flex flex-col gap-4">
+            {% for item in page.extra.errata %}
+            <div class="scroll-mt-20">
+                <div class="collapse collapse-arrow bg-base-200 border border-base-300 rounded-box">
+                    <input type="checkbox" />
+
+                    <div class="collapse-title text-base font-medium flex flex-col gap-2">
+                        <div class="flex flex-row items-baseline gap-2">
+                            <span
+                                    class="whitespace-nowrap shrink-0 badge"
+                                    data-errata-badge
+                                    data-badge-light="{{ badge_light }}"
+                                    data-badge-dark="{{ badge_dark }}"
+                            >
+                              Errata {{ loop.index }}
+                            </span>
+
+                            <span class="text-sm/10">
+                                <span class="font-bold">{{ item.date | date(format="%Y-%m-%d") }}:</span>
+                                {{ item.message }}
+                            </span>
+                        </div>
+
+                        {% if item.credit %}
+                        <div class="text-xs opacity-70 italic whitespace-nowrap px-1">
+                            {{ item.credit | markdown | striptags | safe }}
+                        </div>
+                        {% endif %}
+                    </div>
+
+                    {% if item.content and item.content | length > 0 %}
+                    <div class="collapse-content prose max-w-none pt-2 bg-base-100/50">
+                        {{ item.content | markdown | safe }}
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    {# Taxonomies (tags / categories) #}
+    {% if page.taxonomies and (page.taxonomies.tags or page.taxonomies.categories) %}
+    <div class="mt-8 pt-6 border-t border-gray-500/15 space-y-2 text-sm">
+        {% if page.taxonomies.categories %}
+        {% set feed_filename = config.feed_filenames | first | default(value="atom.xml") %}
+        <div class="flex flex-wrap items-center gap-2">
+            <div class="tooltip" data-tip="Categories">
+                <svg class="w-4 h-4 text-base-content/80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2z"></path>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5a2 2 0 012-2h4a2 2 0 012 2v2H8V5z"></path>
+                </svg>
+            </div>
+            {% for cat in page.taxonomies.categories %}
+            {% set cat_url = get_taxonomy_url(kind="categories", name=cat, lang=lang, required=false) %}
+            <div class="flex">
+                <a href="{{ cat_url }}"
+                   class="inline-flex items-center badge badge-dash border-gray-500/30 text-xs hover:border-gray-500/70 transition-colors">
+                    {{ cat }}
+                </a>
+                <button
+                        onclick="copyToClipboardRSSIcon('{{ cat_url ~ feed_filename }}', this)"
+                        class="relative w-6 h-6 inline-flex items-center justify-center rounded-md hover:bg-primary/10 text-primary transition-colors cursor-pointer"
+                        title="Copy Feed Link"
+                >
+                    <svg class="absolute w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 5c7.18 0 13 5.82 13 13M6 11a7 7 0 017 7m-6 0a1 1 0 11-2 0 1 1 0 012 0z"></path>
+                    </svg>
+                </button>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if page.taxonomies.tags %}
+        <div class="flex flex-wrap items-center gap-2 mt-2">
+            <div class="tooltip" data-tip="Tags">
+                <svg class="w-4 h-4 text-base-content/80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"></path>
+                </svg>
+            </div>
+            {% for tag in page.taxonomies.tags %}
+            <a href="{{ get_taxonomy_url(kind="tags", name=tag, lang=lang, required=false) }}"
+               class="inline-flex items-center badge badge-dash text-xs border-gray-500/30 hover:border-gray-500/70 transition-colors">
+                {{ tag }}
+            </a>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    {% if config.extra.edit_url and config.extra.issue_url %}
+        {% set alert_light = config.extra.issue_and_typo_badge_light | default(value="alert-soft alert-accent") %}
+        {% set alert_dark  = config.extra.issue_and_typo_badge_dark  | default(value="alert-accent") %}
+        <div class="mt-8 pt-6 border-t border-gray-500/15">
+            <div class="flex flex-col sm:flex-row sm:items-start sm:justify-around gap-6 mb-6">
+                <div class="text-sm text-base-content/80 w-full lg:w-1/2">
+                    <div class="flex flex-col items-center gap-1 items-baseline text-center whitespace-nowrap">
+                        <span
+                                class="alert"
+                                data-issue-and-typo-alert
+                                data-issue-and-typo-alert-light="{{ alert_light }}"
+                                data-issue-and-typo-alert-dark="{{ alert_dark }}"
+                        >
+                            {{ utils::trans_or_default(key="found_error_alert", default="Found an error or it needs a clarification?", lang=lang, config=config, config_file=config_file) }}
+                        </span>
+                        <a href="{{ config.extra.issue_url }}"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="inline-flex items-center justify-center text-primary font-medium transition-colors">
+                        <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+                        </svg>
+                            {{ utils::trans_or_default(key="open_issue", default="Open an issue on GitHub.", lang=lang, config=config, config_file=config_file) }}
+                        </a>
+                    </div>
+
+                    <div class="text-sm text-base-content/60 italic mb-4 text-center">
+                        {{ utils::trans_or_default(key="attribution", default="Substantiated corrections will be incorporated with attribution.", lang=lang, config=config, config_file=config_file) }}
+                    </div>
+                </div>
+
+                <div class="text-sm text-base-content/80 flex flex-col items-center gap-1 w-full lg:w-1/2 whitespace-nowrap">
+                    <span
+                            class="alert"
+                            data-issue-and-typo-alert
+                            data-issue-and-typo-alert-light="{{ alert_light }}"
+                            data-issue-and-typo-alert-dark="{{ alert_dark }}"
+                    >
+                        {{ utils::trans_or_default(key="found_typo_alert", default="Found a typo?", lang=lang, config=config, config_file=config_file) }}
+                    </span>
+
+                    <a href="{{ config.extra.edit_url }}/content/{{ page.relative_path }}"
+                       target="_blank"
+                       rel="noopener noreferrer"
+                       title="Edit this page"
+                       class="inline-flex items-center justify-center text-primary font-medium transition-colors">
+                        <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+                        </svg>
+                        {{ utils::trans_or_default(key="fork_and_pr", default="Fork, modify and open a PR.", lang=lang, config=config, config_file=config_file) }}
+                    </a>
+                </div>
+            </div>
+        </div>
+    {% elif config.extra.edit_url %}
+        <div class="my-8 pt-6 border-t border-gray-500/15">
+            <div class="flex flex-wrap items-center gap-4">
+                <a href="{{ config.extra.edit_url }}/content/{{ page.relative_path }}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-2 text-sm text-base-content/60 hover:text-base-content transition-colors">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+                    </svg>
+                    <span>{{ utils::trans_or_default(key="edit_page", default="Edit this page", lang=lang, config=config, config_file=config_file) }}</span>
+                </a>
+            </div>
+        </div>
+    {% endif %}
+
+    {# Share configuration with backward compatibility #}
+    {# Priority: share.* (new) > enable_copy_url/enable_share_x (legacy) #}
+    {% if config.extra.share is defined %}
+        {% set enable_copy_url = config.extra.share.copy_url | default(value=config.extra.enable_copy_url | default(value=false)) %}
+        {% set enable_share_x = config.extra.share.x | default(value=config.extra.enable_share_x | default(value=false)) %}
+    {% else %}
+        {% set enable_copy_url = config.extra.enable_copy_url | default(value=false) %}
+        {% set enable_share_x = config.extra.enable_share_x | default(value=false) %}
+    {% endif %}
+    {% if enable_copy_url != false or enable_share_x != false %}
+    <div class="mt-8">
+        <div class="flex flex-wrap items-center gap-4 border-t border-gray-500/10 pt-4">
+            {% if enable_copy_url %}
+                <button onclick="copyURL('{{ page.permalink }}', this)" class="inline-flex items-center gap-2 text-sm text-base-content/60 hover:text-base-content transition-colors cursor-pointer">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                </svg>
+                <span>{{ utils::trans_or_default(key="copy_url_msg", default="Copy URL", lang=lang, config=config, config_file=config_file) }}</span>
+            </button>
+            {% endif %}
+            {% if enable_share_x and page.permalink and page.title %}
+            <a href="https://twitter.com/intent/tweet?url={{ page.permalink | urlencode }}&text={{ page.title | urlencode }}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-2 text-sm text-base-content/60 hover:text-base-content transition-colors">
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"></path>
+                </svg>
+                <span>{{ utils::trans_or_default(key="share_on_x", default="Share on X", lang=lang, config=config, config_file=config_file) }}</span>
+            </a>
+            {% endif %}
+        </div>
+    {% else %}
+        <div><div>
+    {% endif %}
+    </div>
+{% endblock content %}
+
+{% block prev_link %}
+    {% if page.smaller %}
+        <a class="nav-button nav-button-prev group" href="{{ page.smaller.permalink | safe }}">
+            <div class="nav-button-content">
+                <div class="nav-button-direction">
+                    <svg class="w-5 h-5 transition-transform group-hover:-translate-x-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+                    </svg>
+                    <span class="nav-button-label">{{ utils::trans_or_default(key="back_to", default="Back to", lang=lang, config=config, config_file=config_file) }}</span>
+                </div>
+                <div class="nav-button-title">{{ page.smaller.title }}</div>
+            </div>
+        </a>
+    {% elif page.ancestors | length > 1 %}
+        {% set parent = get_section(path=page.ancestors | reverse | first) %}
+        <a class="nav-button nav-button-prev group" href="{{ parent.permalink | safe }}">
+            <div class="nav-button-content">
+                <div class="nav-button-direction">
+                    <svg class="w-5 h-5 transition-transform group-hover:-translate-x-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+                    </svg>
+                    <span class="nav-button-label">{{ utils::trans_or_default(key="back_to", default="Back to", lang=lang, config=config, config_file=config_file) }}</span>
+                </div>
+                <div class="nav-button-title">{{ parent.title }}</div>
+            </div>
+        </a>
+    {% endif %}
+{% endblock prev_link %}
+
+{% block next_link %}
+    {% if page.higher %}
+        <a class="nav-button nav-button-next group" href="{{ page.higher.permalink | safe }}">
+            <div class="nav-button-content">
+                <div class="nav-button-direction">
+                    <svg class="w-5 h-5 transition-transform group-hover:translate-x-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                    </svg>
+                    <span class="nav-button-label">{{ utils::trans_or_default(key="next", default="Next", lang=lang, config=config, config_file=config_file) }}</span>
+                </div>
+                <div class="nav-button-title">{{ page.higher.title }}</div>
+            </div>
+        </a>
+    {% else %}
+        {% set index = get_section(path="_index.md") %}
+        {% set found_current = false %}
+        {% set next_linked = false %}
+        {% for p in index.pages %}
+            {% if found_current and not next_linked %}
+                <a class="nav-button nav-button-next group" href="{{ p.permalink | safe }}">
+                    <div class="nav-button-content">
+                        <div class="nav-button-direction">
+                            <svg class="w-5 h-5 transition-transform group-hover:translate-x-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                            </svg>
+                            <span class="nav-button-label">{{ utils::trans_or_default(key="next", default="Next", lang=lang, config=config, config_file=config_file) }}</span>
+                        </div>
+                        <div class="nav-button-title">{{ p.title }}</div>
+                    </div>
+                </a>
+                {% set_global next_linked = true %}
+                {% set_global found_current = false %}
+            {% endif %}
+            {% if p.permalink == page.permalink %}
+                {% set_global found_current = true %}
+            {% endif %}
+        {% endfor %}
+        {% if found_current and not next_linked %}
+            {% set first_subsection = get_section(path=index.subsections | first) %}
+            <a class="nav-button nav-button-next group" href="{{ first_subsection.permalink | safe }}">
+                <div class="nav-button-content">
+                    <div class="nav-button-direction">
+                        <svg class="w-5 h-5 transition-transform group-hover:translate-x-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                        </svg>
+                        <span class="nav-button-label">{{ utils::trans_or_default(key="next", default="Next", lang=lang, config=config, config_file=config_file) }}</span>
+                    </div>
+                    <div class="nav-button-title">{{ first_subsection.title }}</div>
+                </div>
+            </a>
+            {% set_global next_linked = true %}
+            {% set_global found_current = false %}
+        {% endif %}
+        {% if not next_linked %}
+            {% for s in index.subsections %}
+                {% set subsection = get_section(path=s) %}
+                {% if found_current %}
+                    <a class="nav-button nav-button-next group" href="{{ subsection.permalink | safe }}">
+                        <div class="nav-button-content">
+                            <div class="nav-button-direction">
+                                <svg class="w-5 h-5 transition-transform group-hover:translate-x-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                                </svg>
+                                <span class="nav-button-label">{{ utils::trans_or_default(key="next", default="Next", lang=lang, config=config, config_file=config_file) }}</span>
+                            </div>
+                            <div class="nav-button-title">{{ subsection.title }}</div>
+                        </div>
+                    </a>
+                    {% set_global found_current = false %}
+                {% endif %}
+                {% for p in subsection.pages %}
+                    {% if p.permalink == page.permalink %}
+                        {% set_global found_current = true %}
+                    {% endif %}
+                {% endfor %}
+            {% endfor %}
+        {% endif %}
+    {% endif %}
+{% endblock next_link %}

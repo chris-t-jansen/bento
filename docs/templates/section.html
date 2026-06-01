@@ -1,0 +1,211 @@
+{% extends "index.html" %}
+{% import "macros/utils.html" as utils %}
+
+{% set config_file = load_data(path="/config.toml", format="toml", required=false) %}
+{% if not config_file %}
+    {% set config_file = load_data(path="/config.yaml", format="yaml", required=false) %}
+{% endif %}
+{% if not config_file %}
+    {% set config_file = load_data(path="/config.yml", format="yaml", required=false) %}
+{% endif %}
+
+{% block header %}
+    {{ macros_header::header(config=config, lang=lang, section=section) }}
+{% endblock header %}
+
+{% block content %}
+    <div class="mb-12 pb-4 border-b border-gray-500/15">
+        <h1 class="flex items-center gap-3 py-1">
+            {{ section.title }}
+            {% if section.extra.badge %}
+                <span class="text-sm font-normal px-2 py-0.5 border border-gray-500/30 rounded">{{ section.extra.badge }}</span>
+            {% endif %}
+
+            {# Feed icon #}
+            {# 1. Get all categories used in the site (only if taxonomy is configured) #}
+            {% set has_categories_taxonomy = false %}
+            {% for tax in config.taxonomies %}
+                {% if tax.name == "categories" %}
+                    {% set_global has_categories_taxonomy = true %}
+                {% endif %}
+            {% endfor %}
+            {% if has_categories_taxonomy %}
+                {% set categories = get_taxonomy(kind="categories", lang=lang) %}
+            {% endif %}
+            {% set feed_filename = config.feed_filenames | first | default(value="atom.xml") %}
+            {% set category_has_feed = false %}
+            {% set feed_url = "" %}
+
+            {# 2. Check if the current section title exists in the categories list #}
+            {% if has_categories_taxonomy and categories %}
+                {% for term in categories.items %}
+                    {# Check Match: Title OR Custom Slug in [extra] #}
+                    {% if term.name | lower == section.title | lower or (section.extra.slug is defined and term.slug == section.extra.slug) %}
+                        {% set_global category_has_feed = true %}
+                        {% set_global feed_url = term.permalink ~ feed_filename %}
+                    {% endif %}
+                {% endfor %}
+            {% endif %}
+            {# --- END: FEED GUARD LOGIC --- #}
+
+            {# Only show the feed icon if Config is enabled AND the Category exists #}
+            {% if config.generate_feeds and category_has_feed %}
+            <button
+                    onclick="copyToClipboardRSSIcon('{{ feed_url }}', this)"
+                    class="inline-flex items-center justify-center p-1 rounded-md hover:bg-primary/10 text-primary transition-colors cursor-pointer"
+                    title="Copy Feed Link"
+            >
+                <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 5c7.18 0 13 5.82 13 13M6 11a7 7 0 017 7m-6 0a1 1 0 11-2 0 1 1 0 012 0z"></path>
+                </svg>
+            </button>
+            {% endif %}
+
+        </h1>
+        <p class="text-gray-500">{{ section.description }}</p>
+    </div>
+    {{ section.content | safe }}
+
+    {% if config.extra.edit_url %}
+    <div class="mt-8 pt-6 border-t border-gray-500/15">
+        <div class="flex flex-wrap items-center gap-4">
+            <a href="{{ config.extra.edit_url }}/content/{{ section.relative_path }}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-2 text-sm text-base-content/60 hover:text-base-content transition-colors">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+                </svg>
+                <span>{{ utils::trans_or_default(key="edit_page", default="Edit this page", lang=lang, config=config, config_file=config_file) }}</span>
+            </a>
+            {# Share configuration with backward compatibility #}
+            {# Priority: share.* (new) > enable_copy_url/enable_share_x (legacy) #}
+            {% if config.extra.share is defined %}
+                {% set enable_copy_url = config.extra.share.copy_url | default(value=config.extra.enable_copy_url | default(value=false)) %}
+                {% set enable_share_x = config.extra.share.x | default(value=config.extra.enable_share_x | default(value=false)) %}
+            {% else %}
+                {% set enable_copy_url = config.extra.enable_copy_url | default(value=false) %}
+                {% set enable_share_x = config.extra.enable_share_x | default(value=false) %}
+            {% endif %}
+            {% if enable_copy_url %}
+            <button onclick="copyURL('{{ section.permalink }}', this)" class="inline-flex items-center gap-2 text-sm text-base-content/60 hover:text-base-content transition-colors cursor-pointer">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                </svg>
+                <span>{{ utils::trans_or_default(key="copy_url_msg", default="Copy URL", lang=lang, config=config, config_file=config_file) }}</span>
+            </button>
+            {% endif %}
+            {% if enable_share_x and section.permalink and section.title %}
+            <a href="https://twitter.com/intent/tweet?url={{ section.permalink | urlencode }}&text={{ section.title | urlencode }}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-2 text-sm text-base-content/60 hover:text-base-content transition-colors">
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"></path>
+                </svg>
+                <span>{{ utils::trans_or_default(key="share_on_x", default="Share on X", lang=lang, config=config, config_file=config_file) }}</span>
+            </a>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+{% endblock content %}
+
+{% block prev_link %}
+    {# Dynamically resolve the index path based on the current language #}
+    {% if lang == config.default_language %}
+    {% set index = get_section(path="_index.md") %}
+    {% else %}
+    {% set index = get_section(path="_index." ~ lang ~ ".md") %}
+    {% endif %}
+    {% set found_current = false %}
+    {% for s in index.subsections | reverse %}
+        {% set subsection = get_section(path=s) %}
+        {% if subsection.permalink == section.permalink %}
+            {% set_global found_current = true %}
+        {% else %}
+            {% if found_current and subsection.title and subsection.title != "" %}
+                {% if subsection.pages %}
+                    {% set last_page = subsection.pages | last %}
+                    <a class="nav-button nav-button-prev group" href="{{ last_page.permalink | safe }}">
+                        <div class="nav-button-content">
+                            <div class="nav-button-direction">
+                                <svg class="w-5 h-5 transition-transform group-hover:-translate-x-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+                                </svg>
+                                <span class="nav-button-label">{{ utils::trans_or_default(key="previous", default="Previous", lang=lang, config=config, config_file=config_file) }}</span>
+                            </div>
+                            <div class="nav-button-title">{{ last_page.title }}</div>
+                        </div>
+                    </a>
+                {% else %}
+                    <a class="nav-button nav-button-prev group" href="{{ subsection.permalink | safe }}">
+                        <div class="nav-button-content">
+                            <div class="nav-button-direction">
+                                <svg class="w-5 h-5 transition-transform group-hover:-translate-x-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+                                </svg>
+                                <span class="nav-button-label">{{ utils::trans_or_default(key="previous", default="Previous", lang=lang, config=config, config_file=config_file) }}</span>
+                            </div>
+                            <div class="nav-button-title">{{ subsection.title }}</div>
+                        </div>
+                    </a>
+                {% endif %}
+                {% set_global found_current = false %}
+            {% endif %}
+        {% endif %}
+    {% endfor %}
+    {% if found_current and index.pages %}
+        {% set last_root_page = index.pages | last %}
+        <a class="nav-button nav-button-prev group" href="{{ last_root_page.permalink | safe }}">
+            <div class="nav-button-content">
+                <div class="nav-button-direction">
+                    <svg class="w-5 h-5 transition-transform group-hover:-translate-x-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+                    </svg>
+                    <span class="nav-button-label">{{ utils::trans_or_default(key="previous", default="Previous", lang=lang, config=config, config_file=config_file) }}</span>
+                </div>
+                <div class="nav-button-title">{{ last_root_page.title }}</div>
+            </div>
+        </a>
+    {% endif %}
+{% endblock prev_link %}
+
+{% block next_link %}
+    {% if section.pages %}
+        {% set next_page = section.pages | first %}
+        <a class="nav-button nav-button-next group" href="{{ next_page.permalink | safe }}">
+            <div class="nav-button-content">
+                <div class="nav-button-direction">
+                    <svg class="w-5 h-5 transition-transform group-hover:translate-x-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                    </svg>
+                    <span class="nav-button-label">{{ utils::trans_or_default(key="next", default="Next", lang=lang, config=config, config_file=config_file) }}</span>
+                </div>
+                <div class="nav-button-title">{{ next_page.title }}</div>
+            </div>
+        </a>
+    {% else %}
+        {# Dynamically resolve the index path based on the current language #}
+        {% if lang == config.default_language %}
+        {% set index = get_section(path="_index.md") %}
+        {% else %}
+        {% set index = get_section(path="_index." ~ lang ~ ".md") %}
+        {% endif %}
+        {% set found_current = false %}
+        {% for s in index.subsections %}
+            {% set subsection = get_section(path=s) %}
+            {% if found_current and subsection.title and subsection.title != "" %}
+                <a class="nav-button nav-button-next group" href="{{ subsection.permalink | safe }}">
+                    <div class="nav-button-content">
+                        <div class="nav-button-direction">
+                            <svg class="w-5 h-5 transition-transform group-hover:translate-x-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                            </svg>
+                            <span class="nav-button-label">{{ utils::trans_or_default(key="next", default="Next", lang=lang, config=config, config_file=config_file) }}</span>
+                        </div>
+                        <div class="nav-button-title">{{ subsection.title }}</div>
+                    </div>
+                </a>
+                {% set_global found_current = false %}
+            {% endif %}
+            {% if subsection.permalink == section.permalink %}
+                {% set_global found_current = true %}
+            {% endif %}
+        {% endfor %}
+    {% endif %}
+{% endblock next_link %}
