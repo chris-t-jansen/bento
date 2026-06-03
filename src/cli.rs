@@ -354,12 +354,8 @@ fn write_install_hint(name: &str, out: &mut dyn Write) -> Result<()> {
     use console::style;
     writeln!(out, "     Install {name} to use Bento:").map_err(crate::io_render_err)?;
     #[cfg(target_os = "macos")]
-    writeln!(
-        out,
-        "       {}  brew install ffmpeg",
-        style("→").dim()
-    )
-    .map_err(crate::io_render_err)?;
+    writeln!(out, "       {}  brew install ffmpeg", style("→").dim())
+        .map_err(crate::io_render_err)?;
     #[cfg(target_os = "linux")]
     {
         writeln!(

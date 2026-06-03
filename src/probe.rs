@@ -102,7 +102,15 @@ fn render(
 
         for (idx, (track, flags)) in probe.audio.iter().zip(audio_flags.iter()).enumerate() {
             write_audio_row(
-                out, idx + 1, track, flags, lang_w, codec_w, audio_flag_w, layout_w, verbose,
+                out,
+                idx + 1,
+                track,
+                flags,
+                lang_w,
+                codec_w,
+                audio_flag_w,
+                layout_w,
+                verbose,
             )?;
         }
         writeln!(out)?;
@@ -168,6 +176,7 @@ fn render(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn write_audio_row(
     out: &mut dyn Write,
     num: usize,
@@ -268,21 +277,45 @@ fn write_subtitle_row(
 fn audio_flag_str(d: &Dispositions, verbose: bool) -> String {
     if verbose {
         let mut names: Vec<&str> = Vec::new();
-        if d.default { names.push("default"); }
-        if d.forced { names.push("forced"); }
-        if d.original { names.push("original"); }
-        if d.commentary { names.push("commentary"); }
-        if d.hearing_impaired { names.push("hearing-impaired"); }
-        if d.visual_impaired { names.push("visual-impaired"); }
+        if d.default {
+            names.push("default");
+        }
+        if d.forced {
+            names.push("forced");
+        }
+        if d.original {
+            names.push("original");
+        }
+        if d.commentary {
+            names.push("commentary");
+        }
+        if d.hearing_impaired {
+            names.push("hearing-impaired");
+        }
+        if d.visual_impaired {
+            names.push("visual-impaired");
+        }
         names.join(", ")
     } else {
         let mut flags: Vec<&str> = Vec::new();
-        if d.default { flags.push("D"); }
-        if d.forced { flags.push("F"); }
-        if d.original { flags.push("O"); }
-        if d.commentary { flags.push("C"); }
-        if d.hearing_impaired { flags.push("HI"); }
-        if d.visual_impaired { flags.push("VI"); }
+        if d.default {
+            flags.push("D");
+        }
+        if d.forced {
+            flags.push("F");
+        }
+        if d.original {
+            flags.push("O");
+        }
+        if d.commentary {
+            flags.push("C");
+        }
+        if d.hearing_impaired {
+            flags.push("HI");
+        }
+        if d.visual_impaired {
+            flags.push("VI");
+        }
         flags.join(",")
     }
 }
@@ -293,17 +326,33 @@ fn audio_flag_str(d: &Dispositions, verbose: bool) -> String {
 fn sub_flag_str(d: &Dispositions, verbose: bool) -> String {
     if verbose {
         let mut names: Vec<&str> = Vec::new();
-        if d.default { names.push("default"); }
-        if d.forced { names.push("forced"); }
-        if d.commentary { names.push("commentary"); }
-        if d.hearing_impaired { names.push("hearing-impaired"); }
+        if d.default {
+            names.push("default");
+        }
+        if d.forced {
+            names.push("forced");
+        }
+        if d.commentary {
+            names.push("commentary");
+        }
+        if d.hearing_impaired {
+            names.push("hearing-impaired");
+        }
         names.join(", ")
     } else {
         let mut flags: Vec<&str> = Vec::new();
-        if d.default { flags.push("D"); }
-        if d.forced { flags.push("F"); }
-        if d.commentary { flags.push("C"); }
-        if d.hearing_impaired { flags.push("HI"); }
+        if d.default {
+            flags.push("D");
+        }
+        if d.forced {
+            flags.push("F");
+        }
+        if d.commentary {
+            flags.push("C");
+        }
+        if d.hearing_impaired {
+            flags.push("HI");
+        }
         flags.join(",")
     }
 }

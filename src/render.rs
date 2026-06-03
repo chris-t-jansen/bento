@@ -122,9 +122,19 @@ fn render(
         style("Layers").bold(),
         style("(lowest → highest precedence)").dim()
     )?;
-    writeln!(out, "    {}  {}", style("·").dim(), style(Layer::Defaults.display()).dim())?;
+    writeln!(
+        out,
+        "    {}  {}",
+        style("·").dim(),
+        style(Layer::Defaults.display()).dim()
+    )?;
     for (layer, _) in layers {
-        writeln!(out, "    {}  {}", style("·").dim(), styled_layer_line(layer))?;
+        writeln!(
+            out,
+            "    {}  {}",
+            style("·").dim(),
+            styled_layer_line(layer)
+        )?;
     }
     let sidecar = sidecar_path(target);
     if !layers.iter().any(|(l, _)| matches!(l, Layer::PerFile(_))) {
@@ -160,7 +170,7 @@ fn render(
             out,
             "    {:<width$}  = {:<24}  {}",
             path,
-            style(format_scalar(&val)).dim(),
+            style(format_scalar(val)).dim(),
             styled_layer_badge(layer_kind),
             width = key_width,
         )?;
@@ -286,11 +296,7 @@ fn render(
 fn styled_layer_line(layer: &Layer) -> String {
     match layer {
         Layer::Defaults => style("defaults (built-in)").dim().to_string(),
-        Layer::Global(p) => format!(
-            "{}   {}",
-            style("global").cyan(),
-            style(p.display()).dim()
-        ),
+        Layer::Global(p) => format!("{}   {}", style("global").cyan(), style(p.display()).dim()),
         Layer::Directory(p) => format!(
             "{}   {}",
             style("directory").yellow(),

@@ -94,12 +94,8 @@ pub fn global_config_path() -> Option<PathBuf> {
 pub fn ensure_global_config(path: &Path, yes: bool, out: &mut dyn Write) -> Result<()> {
     if path.exists() {
         read_config_file(path, out)?;
-        writeln!(
-            out,
-            "  {}  global config: ok",
-            style("✓").green().bold()
-        )
-        .map_err(crate::io_render_err)?;
+        writeln!(out, "  {}  global config: ok", style("✓").green().bold())
+            .map_err(crate::io_render_err)?;
         writeln!(out, "     {}", style(path.display()).dim()).map_err(crate::io_render_err)?;
         return Ok(());
     }
@@ -110,12 +106,8 @@ pub fn ensure_global_config(path: &Path, yes: bool, out: &mut dyn Write) -> Resu
         style("✗").red().bold()
     )
     .map_err(crate::io_render_err)?;
-    writeln!(
-        out,
-        "     expected at: {}",
-        style(path.display()).dim()
-    )
-    .map_err(crate::io_render_err)?;
+    writeln!(out, "     expected at: {}", style(path.display()).dim())
+        .map_err(crate::io_render_err)?;
 
     let should_create = if yes {
         true
