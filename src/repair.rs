@@ -13,6 +13,8 @@ use std::collections::{BTreeMap, HashSet};
 use std::io::Write;
 use std::path::Path;
 
+use console::style;
+
 use crate::error::{Error, Result};
 
 /// Deprecated config keys that `repair` upgrades in place, as
@@ -37,9 +39,20 @@ pub fn run_repair(yes: bool, out: &mut dyn Write) -> Result<()> {
 /// temp-dir path without touching the real global config.
 pub fn run_repair_at(path: &Path, yes: bool, out: &mut dyn Write) -> Result<()> {
     if !path.exists() {
-        writeln!(out, "global config: not found").map_err(crate::io_render_err)?;
-        writeln!(out, "  expected at: {}", path.display()).map_err(crate::io_render_err)?;
-        writeln!(out, "Run `bento check [-y]` to create it.").map_err(crate::io_render_err)?;
+        writeln!(
+            out,
+            "  {}  global config: not found",
+            style("⚠").yellow().bold()
+        )
+        .map_err(crate::io_render_err)?;
+        writeln!(
+            out,
+            "     expected at: {}",
+            style(path.display()).dim()
+        )
+        .map_err(crate::io_render_err)?;
+        writeln!(out, "     Run `bento check [-y]` to create it.")
+            .map_err(crate::io_render_err)?;
         return Ok(());
     }
 
@@ -53,11 +66,14 @@ pub fn run_repair_at(path: &Path, yes: bool, out: &mut dyn Write) -> Result<()> 
         Err(e) => {
             writeln!(
                 out,
-                "Global config is invalid TOML and cannot be repaired automatically."
+                "  {}  Global config is invalid TOML and cannot be repaired automatically.",
+                style("✗").red().bold()
             )
             .map_err(crate::io_render_err)?;
-            writeln!(out, "  {}", path.display()).map_err(crate::io_render_err)?;
-            writeln!(out, "  {}", e).map_err(crate::io_render_err)?;
+            writeln!(out, "     {}", style(path.display()).dim())
+                .map_err(crate::io_render_err)?;
+            writeln!(out, "     {}", style(&e.to_string()).dim())
+                .map_err(crate::io_render_err)?;
             writeln!(out).map_err(crate::io_render_err)?;
 
             if confirm(
@@ -66,9 +82,15 @@ pub fn run_repair_at(path: &Path, yes: bool, out: &mut dyn Write) -> Result<()> 
                 out,
             )? {
                 crate::bootstrap::write_global_config(path)?;
-                writeln!(out, "Wrote {}", path.display()).map_err(crate::io_render_err)?;
+                writeln!(
+                    out,
+                    "  {}  Wrote {}",
+                    style("✓").green().bold(),
+                    path.display()
+                )
+                .map_err(crate::io_render_err)?;
             } else {
-                writeln!(out, "skipped").map_err(crate::io_render_err)?;
+                writeln!(out, "     skipped").map_err(crate::io_render_err)?;
             }
             return Ok(());
         }
@@ -89,23 +111,36 @@ pub fn run_repair_at(path: &Path, yes: bool, out: &mut dyn Write) -> Result<()> 
     let (migrated_text, renames) = apply_renames(&text);
 
     if missing.is_empty() && renames.is_empty() {
-        writeln!(out, "Global config is up to date — no fields are missing.")
+        writeln!(
+            out,
+            "  {}  Global config is up to date — no fields are missing.",
+            style("✓").green().bold()
+        )
+        .map_err(crate::io_render_err)?;
+        writeln!(out, "     {}", style(path.display()).dim())
             .map_err(crate::io_render_err)?;
-        writeln!(out, "  {}", path.display()).map_err(crate::io_render_err)?;
         return Ok(());
     }
 
     if !renames.is_empty() {
         writeln!(
             out,
-            "Global config: {} deprecated key(s) to upgrade in {}",
+            "  {}  {} deprecated key(s) to upgrade in {}",
+            style("⚠").yellow().bold(),
             renames.len(),
-            path.display()
+            style(path.display()).dim()
         )
         .map_err(crate::io_render_err)?;
         writeln!(out).map_err(crate::io_render_err)?;
         for (old, new) in &renames {
-            writeln!(out, "  {} → {}", old, new).map_err(crate::io_render_err)?;
+            writeln!(
+                out,
+                "     {}  {}  {}",
+                style(old).dim(),
+                style("→").yellow(),
+                style(new).cyan()
+            )
+            .map_err(crate::io_render_err)?;
         }
         writeln!(out).map_err(crate::io_render_err)?;
     }
@@ -113,22 +148,28 @@ pub fn run_repair_at(path: &Path, yes: bool, out: &mut dyn Write) -> Result<()> 
     if !missing.is_empty() {
         writeln!(
             out,
-            "Global config: {} field(s) missing from {}",
+            "  {}  {} field(s) missing from {}",
+            style("⚠").yellow().bold(),
             missing.len(),
-            path.display()
+            style(path.display()).dim()
         )
         .map_err(crate::io_render_err)?;
         writeln!(out).map_err(crate::io_render_err)?;
 
         for (dotted_path, value) in &missing {
-            writeln!(out, "  {} = {}", dotted_path, format_value(value))
-                .map_err(crate::io_render_err)?;
+            writeln!(
+                out,
+                "     {}  =  {}",
+                style(dotted_path).cyan(),
+                style(format_value(value)).dim()
+            )
+            .map_err(crate::io_render_err)?;
         }
         writeln!(out).map_err(crate::io_render_err)?;
     }
 
     if !confirm("Apply these changes to your global config?", yes, out)? {
-        writeln!(out, "skipped").map_err(crate::io_render_err)?;
+        writeln!(out, "     skipped").map_err(crate::io_render_err)?;
         return Ok(());
     }
 
@@ -147,12 +188,19 @@ pub fn run_repair_at(path: &Path, yes: bool, out: &mut dyn Write) -> Result<()> 
         source: e,
     })?;
     for (old, new) in &renames {
-        writeln!(out, "Upgraded deprecated key `{}` → `{}`.", old, new)
-            .map_err(crate::io_render_err)?;
+        writeln!(
+            out,
+            "  {}  Upgraded deprecated key `{}` → `{}`.",
+            style("✓").green().bold(),
+            old,
+            new
+        )
+        .map_err(crate::io_render_err)?;
     }
     writeln!(
         out,
-        "Updated {} ({} key(s) upgraded, {} field(s) added)",
+        "  {}  Updated {} ({} key(s) upgraded, {} field(s) added)",
+        style("✓").green().bold(),
         path.display(),
         renames.len(),
         missing.len()

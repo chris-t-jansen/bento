@@ -5,6 +5,8 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+use console::style;
+
 use crate::config::Config;
 use crate::error::{Error, Result};
 use crate::resolve::Layer;
@@ -49,8 +51,9 @@ pub fn read_config_file(path: &Path, out: &mut dyn Write) -> Result<Config> {
     if text_is_blank(&text) {
         writeln!(
             out,
-            "warning: {} is blank; this layer contributes nothing to resolution. \
+            "{} {} is blank; this layer contributes nothing to resolution. \
              Did you mean to add content?",
+            style("warning:").yellow().bold(),
             path.display()
         )
         .map_err(crate::io_render_err)?;
@@ -91,13 +94,28 @@ pub fn global_config_path() -> Option<PathBuf> {
 pub fn ensure_global_config(path: &Path, yes: bool, out: &mut dyn Write) -> Result<()> {
     if path.exists() {
         read_config_file(path, out)?;
-        writeln!(out, "global config: ok").map_err(crate::io_render_err)?;
-        writeln!(out, "  {}", path.display()).map_err(crate::io_render_err)?;
+        writeln!(
+            out,
+            "  {}  global config: ok",
+            style("✓").green().bold()
+        )
+        .map_err(crate::io_render_err)?;
+        writeln!(out, "     {}", style(path.display()).dim()).map_err(crate::io_render_err)?;
         return Ok(());
     }
 
-    writeln!(out, "global config: not found").map_err(crate::io_render_err)?;
-    writeln!(out, "  expected at: {}", path.display()).map_err(crate::io_render_err)?;
+    writeln!(
+        out,
+        "  {}  global config: not found",
+        style("✗").red().bold()
+    )
+    .map_err(crate::io_render_err)?;
+    writeln!(
+        out,
+        "     expected at: {}",
+        style(path.display()).dim()
+    )
+    .map_err(crate::io_render_err)?;
 
     let should_create = if yes {
         true
@@ -109,9 +127,9 @@ pub fn ensure_global_config(path: &Path, yes: bool, out: &mut dyn Write) -> Resu
 
     if should_create {
         crate::bootstrap::write_global_config(path)?;
-        writeln!(out, "wrote {}", path.display()).map_err(crate::io_render_err)?;
+        writeln!(out, "     wrote {}", path.display()).map_err(crate::io_render_err)?;
     } else {
-        writeln!(out, "skipped").map_err(crate::io_render_err)?;
+        writeln!(out, "     skipped").map_err(crate::io_render_err)?;
     }
     Ok(())
 }

@@ -126,21 +126,33 @@ pub fn run_convert(input: &Path, out: &mut dyn Write, opts: ConvertOptions) -> R
     // Handle sidecar write (or dry-run announcement) before encoding starts.
     if let Some(ref sp) = sidecar_path {
         if dry_run {
-            writeln!(out, "Would write sidecar at: {}", sp.display())
-                .map_err(crate::io_render_err)?;
+            writeln!(
+                out,
+                "  {}  Would write sidecar at: {}",
+                style("–").dim(),
+                sp.display()
+            )
+            .map_err(crate::io_render_err)?;
             writeln!(out).map_err(crate::io_render_err)?;
         } else if sp.exists() {
             if !warn_flags.no_warnings {
                 writeln!(
                     out,
-                    "warning: --generate-config: sidecar already exists, not overwriting: {}",
+                    "  {}  --generate-config: sidecar already exists, not overwriting: {}",
+                    style("warning:").yellow().bold(),
                     sp.display()
                 )
                 .map_err(crate::io_render_err)?;
             }
         } else {
             write_sidecar(&cli_config, sp)?;
-            writeln!(out, "Wrote config to: {}", sp.display()).map_err(crate::io_render_err)?;
+            writeln!(
+                out,
+                "  {}  Wrote config to: {}",
+                style("✓").green().bold(),
+                sp.display()
+            )
+            .map_err(crate::io_render_err)?;
         }
     }
 
@@ -198,8 +210,13 @@ pub fn run_convert(input: &Path, out: &mut dyn Write, opts: ConvertOptions) -> R
     if keep_intermediates {
         if let Some(dir) = temp_dir {
             let path = dir.keep();
-            writeln!(out, "\nIntermediate files preserved at: {}", path.display())
-                .map_err(crate::io_render_err)?;
+            writeln!(
+                out,
+                "\n  {}  Intermediate files preserved at: {}",
+                style("↓").dim(),
+                path.display()
+            )
+            .map_err(crate::io_render_err)?;
         }
     }
     // temp_dir drops here if !keep_intermediates → auto-cleanup
@@ -227,8 +244,13 @@ fn run_convert_directory(
     files.sort();
 
     if files.is_empty() {
-        writeln!(out, "No video files found in {}.", input_dir.display())
-            .map_err(crate::io_render_err)?;
+        writeln!(
+            out,
+            "  {}  No video files found in {}.",
+            style("–").dim(),
+            input_dir.display()
+        )
+        .map_err(crate::io_render_err)?;
         return Ok(());
     }
 
@@ -247,8 +269,14 @@ fn run_convert_directory(
                 }
                 let msg = e.to_string();
                 if !dry_run {
-                    writeln!(out, "[error] {}: {}", file.display(), msg)
-                        .map_err(crate::io_render_err)?;
+                    writeln!(
+                        out,
+                        "  {}  {}: {}",
+                        style("[error]").red().bold(),
+                        file.display(),
+                        msg
+                    )
+                    .map_err(crate::io_render_err)?;
                 }
                 failed.push((file.clone(), msg));
             }
@@ -303,8 +331,9 @@ fn run_convert_file(
         for (path, lower_layer, higher_layer) in detect_redundancies(&layers) {
             writeln!(
                 out,
-                "warning: redundant override: `{}` in {} is already set to \
+                "  {}  redundant override: `{}` in {} is already set to \
                  the same value in {}; the setting in the {} config can be removed.",
+                style("warning:").yellow().bold(),
                 path,
                 layer_inline(&higher_layer),
                 layer_inline(&lower_layer),
@@ -331,8 +360,9 @@ fn run_convert_file(
         if !default_paths.is_empty() {
             writeln!(
                 out,
-                "warning: {} setting{} resolved from baked-in defaults \
+                "  {}  {} setting{} resolved from baked-in defaults \
                  (not present in any config file):",
+                style("warning:").yellow().bold(),
                 default_paths.len(),
                 if default_paths.len() == 1 { "" } else { "s" },
             )
@@ -343,12 +373,22 @@ fn run_convert_file(
                 let val_str = get_toml_at_path(&cfg_val, path)
                     .map(|v| format!(" = {}", toml_value_display(v)))
                     .unwrap_or_default();
-                writeln!(out, "  {}{}", path, val_str).map_err(crate::io_render_err)?;
+                writeln!(
+                    out,
+                    "     {}{}",
+                    style(path.as_str()).cyan(),
+                    style(&val_str).dim()
+                )
+                .map_err(crate::io_render_err)?;
             }
             writeln!(
                 out,
-                "  Run `bento repair` to add these to your global config, \
-                 or pass --no-warn-missing to suppress.",
+                "     {}",
+                style(
+                    "Run `bento repair` to add these to your global config, \
+                     or pass --no-warn-missing to suppress."
+                )
+                .dim()
             )
             .map_err(crate::io_render_err)?;
         }
@@ -365,12 +405,23 @@ fn run_convert_file(
         .filter(|i| i.severity == Severity::Warning)
         .count();
     for issue in &issues {
-        let label = match issue.severity {
-            Severity::Error => "error",
-            Severity::Warning => "warning",
-        };
-        writeln!(out, "[{}] {}: {}", label, issue.path, issue.message)
-            .map_err(crate::io_render_err)?;
+        match issue.severity {
+            Severity::Error => writeln!(
+                out,
+                "  {}  {}: {}",
+                style("[error]").red().bold(),
+                style(&issue.path).bold(),
+                issue.message
+            ),
+            Severity::Warning => writeln!(
+                out,
+                "  {}  {}: {}",
+                style("[warning]").yellow().bold(),
+                style(&issue.path).bold(),
+                issue.message
+            ),
+        }
+        .map_err(crate::io_render_err)?;
     }
     if error_count > 0 {
         return Err(Error::ConfigInvalid {
@@ -458,7 +509,8 @@ fn run_convert_file(
             OnExisting::Warn => {
                 writeln!(
                     out,
-                    "warning: output exists, skipping: {}",
+                    "  {}  output exists, skipping: {}",
+                    style("warning:").yellow().bold(),
                     output_path.display()
                 )
                 .map_err(crate::io_render_err)?;
@@ -545,7 +597,13 @@ fn run_convert_file(
 
     // --- Verbose: print the ffmpeg command line ------------------------------
     if verbosity == Verbosity::Verbose {
-        writeln!(out, "ffmpeg {}", base_args.join(" ")).map_err(crate::io_render_err)?;
+        writeln!(
+            out,
+            "  {}  ffmpeg {}",
+            style("$").dim(),
+            style(base_args.join(" ")).dim()
+        )
+        .map_err(crate::io_render_err)?;
     }
 
     // --- Run encode ----------------------------------------------------------
@@ -839,7 +897,8 @@ fn print_convert_header(
             .file_name()
             .map(|s| s.to_string_lossy().into_owned())
             .unwrap_or_else(|| file.display().to_string());
-        writeln!(out, "  {}", name).map_err(crate::io_render_err)?;
+        writeln!(out, "  {}  {}", style("·").dim(), style(name).dim())
+            .map_err(crate::io_render_err)?;
     }
     writeln!(out).map_err(crate::io_render_err)?; // blank line before first file
     Ok(())
@@ -853,12 +912,20 @@ fn print_batch_summary(
     failed: &[(PathBuf, String)],
     out: &mut dyn Write,
 ) -> Result<()> {
-    writeln!(out, "{}", "─".repeat(50)).map_err(crate::io_render_err)?;
+    writeln!(out, "{}", style("─".repeat(50)).dim()).map_err(crate::io_render_err)?;
+    let failed_part = if failed.is_empty() {
+        style(format!("{} failed", failed.len())).dim().to_string()
+    } else {
+        style(format!("{} failed", failed.len()))
+            .red()
+            .bold()
+            .to_string()
+    };
     writeln!(
         out,
-        "  {} succeeded · {} failed{}",
-        succeeded,
-        failed.len(),
+        "  {}  ·  {}{}",
+        style(format!("{} succeeded", succeeded)).green(),
+        failed_part,
         if failed.is_empty() { "" } else { ":" }
     )
     .map_err(crate::io_render_err)?;
@@ -867,7 +934,14 @@ fn print_batch_summary(
             .file_name()
             .map(|s| s.to_string_lossy().into_owned())
             .unwrap_or_else(|| path.display().to_string());
-        writeln!(out, "    ✗ {}: {}", name, err).map_err(crate::io_render_err)?;
+        writeln!(
+            out,
+            "    {}  {}: {}",
+            style("✗").red().bold(),
+            style(&name).bold(),
+            err
+        )
+        .map_err(crate::io_render_err)?;
     }
     Ok(())
 }
@@ -891,7 +965,7 @@ fn print_dry_run_plan(
 
     use crate::config::{EncoderName, Resolution, SubtitleFormat, Tune};
 
-    writeln!(out, "{}:", input_name).map_err(crate::io_render_err)?;
+    writeln!(out, "{}:", style(input_name).bold()).map_err(crate::io_render_err)?;
 
     // --- Subtitles -----------------------------------------------------------
     if let Some(tracks) = &config.subtitles.tracks {
@@ -1225,8 +1299,14 @@ fn print_dry_run_plan(
             None,
             episode_number,
         );
-        writeln!(out, "  ffmpeg {} (subtitle args omitted)", args.join(" "))
-            .map_err(crate::io_render_err)?;
+        writeln!(
+            out,
+            "  {}  ffmpeg {} {}",
+            style("$").dim(),
+            style(args.join(" ")).dim(),
+            style("(subtitle args omitted)").dim()
+        )
+        .map_err(crate::io_render_err)?;
     }
 
     writeln!(out).map_err(crate::io_render_err)?; // blank line between files
@@ -1241,11 +1321,11 @@ fn print_dry_run_summary(
     verbosity: Verbosity,
     out: &mut dyn Write,
 ) -> Result<()> {
-    writeln!(out, "{}", "─".repeat(50)).map_err(crate::io_render_err)?;
+    writeln!(out, "{}", style("─".repeat(50)).dim()).map_err(crate::io_render_err)?;
     let err_str = match error_count {
-        0 => "0 errors".to_string(),
-        1 => "1 error".to_string(),
-        n => format!("{} errors", n),
+        0 => style("0 errors".to_string()).dim().to_string(),
+        1 => style("1 error".to_string()).red().bold().to_string(),
+        n => style(format!("{} errors", n)).red().bold().to_string(),
     };
     writeln!(
         out,
@@ -1258,8 +1338,12 @@ fn print_dry_run_summary(
     if verbosity != Verbosity::Quiet {
         writeln!(
             out,
-            "Run `bento config {}` to see where each setting resolved from.",
-            input.display(),
+            "  {}",
+            style(format!(
+                "Run `bento config {}` to see where each setting resolved from.",
+                input.display()
+            ))
+            .dim()
         )
         .map_err(crate::io_render_err)?;
     }
@@ -1370,9 +1454,10 @@ fn emit_normalize_warnings(
         if warn_unnormalized && is_downmix && !normalize {
             writeln!(
                 out,
-                "warning: audio track {} downmixes {} → {} with normalization off; \
+                "  {}  audio track {} downmixes {} → {} with normalization off; \
                  dialogue may be quiet. Set normalize_downmix = true (section or \
                  per-track), or pass --no-warn-unnormalized-downmix to suppress.",
+                style("warning:").yellow().bold(),
                 label,
                 channels_label(src.channels),
                 channels_label(target_channels),
@@ -1383,9 +1468,10 @@ fn emit_normalize_warnings(
         if warn_redundant && track.normalize_downmix == Some(true) && !is_downmix {
             writeln!(
                 out,
-                "warning: audio track {} sets normalize_downmix = true but the source is \
+                "  {}  audio track {} sets normalize_downmix = true but the source is \
                  not a surround downmix ({} → {}), so it has no effect. \
                  Pass --no-warn-redundant to suppress.",
+                style("warning:").yellow().bold(),
                 label,
                 channels_label(src.channels),
                 channels_label(target_channels),

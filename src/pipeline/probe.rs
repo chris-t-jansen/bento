@@ -24,6 +24,25 @@ pub struct VideoStreamInfo {
     pub r_frame_rate: Option<String>,
 }
 
+/// Stream disposition flags as reported by ffprobe.
+///
+/// All flags default to `false`. Audio-specific flags (`original`,
+/// `visual_impaired`) are stored here too for structural simplicity; the
+/// renderer only surfaces them for audio rows.
+#[derive(Debug, Default, Clone)]
+pub struct Dispositions {
+    pub default: bool,
+    pub forced: bool,
+    /// Original-language track (audio).
+    pub original: bool,
+    /// Commentary track.
+    pub commentary: bool,
+    /// Hearing-impaired / SDH / CC.
+    pub hearing_impaired: bool,
+    /// Visual-impaired / audio description (audio).
+    pub visual_impaired: bool,
+}
+
 #[derive(Debug, Default)]
 pub struct AudioStreamInfo {
     /// Codec name as reported by ffprobe (e.g. "aac", "ac3", "dts", "flac").
@@ -36,6 +55,7 @@ pub struct AudioStreamInfo {
     pub sample_rate: Option<u32>,
     pub language: Option<String>,
     pub title: Option<String>,
+    pub dispositions: Dispositions,
 }
 
 #[derive(Debug, Default)]
@@ -44,6 +64,7 @@ pub struct SubtitleStreamInfo {
     pub codec: String,
     pub language: Option<String>,
     pub title: Option<String>,
+    pub dispositions: Dispositions,
 }
 
 impl SourceProbe {
@@ -135,6 +156,7 @@ pub fn probe_source_streams(input: &Path) -> Result<SourceProbe> {
                         .and_then(|s| s.parse::<u32>().ok()),
                     language: stream["tags"]["language"].as_str().map(str::to_string),
                     title: stream["tags"]["title"].as_str().map(str::to_string),
+                    dispositions: parse_dispositions(stream),
                 });
             }
             "subtitle" => {
@@ -142,6 +164,7 @@ pub fn probe_source_streams(input: &Path) -> Result<SourceProbe> {
                     codec: stream["codec_name"].as_str().unwrap_or("").to_string(),
                     language: stream["tags"]["language"].as_str().map(str::to_string),
                     title: stream["tags"]["title"].as_str().map(str::to_string),
+                    dispositions: parse_dispositions(stream),
                 });
             }
             _ => {}
@@ -159,6 +182,22 @@ pub fn probe_source_streams(input: &Path) -> Result<SourceProbe> {
         subtitles,
         duration_secs,
     })
+}
+
+/// Parse the `disposition` object from one ffprobe stream entry.
+/// All flags default to `false` when the key is absent or the value is 0.
+fn parse_dispositions(stream: &serde_json::Value) -> Dispositions {
+    let d = &stream["disposition"];
+    let flag = |key: &str| d[key].as_i64().unwrap_or(0) != 0;
+    Dispositions {
+        default: flag("default"),
+        forced: flag("forced"),
+        original: flag("original"),
+        // ffprobe uses "comment" (not "commentary")
+        commentary: flag("comment"),
+        hearing_impaired: flag("hearing_impaired"),
+        visual_impaired: flag("visual_impaired"),
+    }
 }
 
 /// Run a short ffmpeg cropdetect pass (first 10 s) and return the crop
