@@ -7,10 +7,10 @@ use console::style;
 
 use crate::error::{Error, Result};
 use crate::pipeline::probe::{
-    AudioStreamInfo, SourceProbe, SubtitleStreamInfo, probe_source_streams,
+    AudioStreamInfo, Dispositions, SourceProbe, SubtitleStreamInfo, probe_source_streams,
 };
 
-pub fn run_probe(path: &Path, out: &mut dyn Write) -> Result<()> {
+pub fn run_probe(path: &Path, verbose: bool, out: &mut dyn Write) -> Result<()> {
     if !path.exists() {
         return Err(Error::PathNotFound(path.to_path_buf()));
     }
@@ -18,10 +18,15 @@ pub fn run_probe(path: &Path, out: &mut dyn Write) -> Result<()> {
         return Err(Error::PathIsDirectory(path.to_path_buf()));
     }
     let probe = probe_source_streams(path)?;
-    render(&probe, path, out).map_err(crate::io_render_err)
+    render(&probe, path, verbose, out).map_err(crate::io_render_err)
 }
 
-fn render(probe: &SourceProbe, path: &Path, out: &mut dyn Write) -> std::io::Result<()> {
+fn render(
+    probe: &SourceProbe,
+    path: &Path,
+    verbose: bool,
+    out: &mut dyn Write,
+) -> std::io::Result<()> {
     let filename = path
         .file_name()
         .unwrap_or(path.as_os_str())
@@ -65,6 +70,7 @@ fn render(probe: &SourceProbe, path: &Path, out: &mut dyn Write) -> std::io::Res
     }
 
     // ── Audio ────────────────────────────────────────────────────────────────
+    let audio_flag_w;
     if !probe.audio.is_empty() {
         let count = probe.audio.len();
         writeln!(
@@ -81,6 +87,12 @@ fn render(probe: &SourceProbe, path: &Path, out: &mut dyn Write) -> std::io::Res
             .map(|a| friendly_audio_codec(&a.codec).len())
             .max()
             .unwrap_or(0);
+        let audio_flags: Vec<String> = probe
+            .audio
+            .iter()
+            .map(|a| audio_flag_str(&a.dispositions, verbose))
+            .collect();
+        audio_flag_w = audio_flags.iter().map(|s| s.len()).max().unwrap_or(0);
         let layout_w = probe
             .audio
             .iter()
@@ -88,13 +100,26 @@ fn render(probe: &SourceProbe, path: &Path, out: &mut dyn Write) -> std::io::Res
             .max()
             .unwrap_or(0);
 
-        for (idx, track) in probe.audio.iter().enumerate() {
-            write_audio_row(out, idx + 1, track, lang_w, codec_w, layout_w)?;
+        for (idx, (track, flags)) in probe.audio.iter().zip(audio_flags.iter()).enumerate() {
+            write_audio_row(
+                out,
+                idx + 1,
+                track,
+                flags,
+                lang_w,
+                codec_w,
+                audio_flag_w,
+                layout_w,
+                verbose,
+            )?;
         }
         writeln!(out)?;
+    } else {
+        audio_flag_w = 0;
     }
 
     // ── Subtitles ────────────────────────────────────────────────────────────
+    let sub_flag_w;
     if !probe.subtitles.is_empty() {
         let count = probe.subtitles.len();
         writeln!(
@@ -111,33 +136,57 @@ fn render(probe: &SourceProbe, path: &Path, out: &mut dyn Write) -> std::io::Res
             .map(|s| friendly_sub_codec(&s.codec).len())
             .max()
             .unwrap_or(0);
+        let sub_flags: Vec<String> = probe
+            .subtitles
+            .iter()
+            .map(|s| sub_flag_str(&s.dispositions, verbose))
+            .collect();
+        sub_flag_w = sub_flags.iter().map(|s| s.len()).max().unwrap_or(0);
 
-        for (idx, track) in probe.subtitles.iter().enumerate() {
-            write_subtitle_row(out, idx + 1, track, lang_w, codec_w)?;
+        for (idx, (track, flags)) in probe.subtitles.iter().zip(sub_flags.iter()).enumerate() {
+            write_subtitle_row(out, idx + 1, track, flags, lang_w, codec_w, sub_flag_w)?;
         }
         writeln!(out)?;
+    } else {
+        sub_flag_w = 0;
     }
 
-    // ── Footer hint ──────────────────────────────────────────────────────────
+    // ── Footer ───────────────────────────────────────────────────────────────
     if !probe.audio.is_empty() || !probe.subtitles.is_empty() {
         writeln!(
             out,
             "  {}",
             style("(Track numbers correspond to source = N in your bento.toml.)").dim()
         )?;
+        // Show the flag legend in compact mode when at least one flag is set.
+        if !verbose && (audio_flag_w > 0 || sub_flag_w > 0) {
+            writeln!(
+                out,
+                "  {}",
+                style(
+                    "(Flags: D=default  F=forced  O=original  C=commentary  \
+                     HI=hearing-impaired  VI=visual-impaired)"
+                )
+                .dim()
+            )?;
+        }
         writeln!(out)?;
     }
 
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn write_audio_row(
     out: &mut dyn Write,
     num: usize,
     track: &AudioStreamInfo,
+    flag_str: &str,
     lang_w: usize,
     codec_w: usize,
+    flag_w: usize,
     layout_w: usize,
+    verbose: bool,
 ) -> std::io::Result<()> {
     // Track number — the key value users copy into source =
     write!(out, "    {}", style(format!("{num:>2}")).magenta().bold())?;
@@ -154,6 +203,11 @@ fn write_audio_row(
     let codec = friendly_audio_codec(&track.codec);
     write!(out, "   {codec:<codec_w$}")?;
 
+    // Disposition flags — only when at least one track in this section has flags
+    if flag_w > 0 {
+        write!(out, "   {flag_str:<flag_w$}")?;
+    }
+
     // Channel layout — technical detail, dimmed; padded so bitrate column aligns
     let layout = format!(
         "{:<layout_w$}",
@@ -164,6 +218,13 @@ fn write_audio_row(
     // Bitrate — optional, dimmed
     if let Some(kbps) = track.bitrate_kbps {
         write!(out, "   {}", style(format!("{kbps} kbps")).dim())?;
+    }
+
+    // Sample rate — verbose only
+    if verbose {
+        if let Some(hz) = track.sample_rate {
+            write!(out, "   {}", style(format!("{hz} Hz")).dim())?;
+        }
     }
 
     // Human-readable title — the most useful identification info
@@ -178,8 +239,10 @@ fn write_subtitle_row(
     out: &mut dyn Write,
     num: usize,
     track: &SubtitleStreamInfo,
+    flag_str: &str,
     lang_w: usize,
     codec_w: usize,
+    flag_w: usize,
 ) -> std::io::Result<()> {
     write!(out, "    {}", style(format!("{num:>2}")).magenta().bold())?;
 
@@ -193,11 +256,105 @@ fn write_subtitle_row(
     let codec = friendly_sub_codec(&track.codec);
     write!(out, "   {codec:<codec_w$}")?;
 
+    // Disposition flags — only when at least one track in this section has flags
+    if flag_w > 0 {
+        write!(out, "   {flag_str:<flag_w$}")?;
+    }
+
     if let Some(ref title) = track.title {
         write!(out, "   \"{title}\"")?;
     }
 
     writeln!(out)
+}
+
+// ── Disposition flag strings ──────────────────────────────────────────────────
+
+/// Compact or verbose flag string for an audio track.
+///
+/// Audio exposes all six disposition types; the caller is responsible for not
+/// calling this on subtitle rows (which omit `O` and `VI`).
+fn audio_flag_str(d: &Dispositions, verbose: bool) -> String {
+    if verbose {
+        let mut names: Vec<&str> = Vec::new();
+        if d.default {
+            names.push("default");
+        }
+        if d.forced {
+            names.push("forced");
+        }
+        if d.original {
+            names.push("original");
+        }
+        if d.commentary {
+            names.push("commentary");
+        }
+        if d.hearing_impaired {
+            names.push("hearing-impaired");
+        }
+        if d.visual_impaired {
+            names.push("visual-impaired");
+        }
+        names.join(", ")
+    } else {
+        let mut flags: Vec<&str> = Vec::new();
+        if d.default {
+            flags.push("D");
+        }
+        if d.forced {
+            flags.push("F");
+        }
+        if d.original {
+            flags.push("O");
+        }
+        if d.commentary {
+            flags.push("C");
+        }
+        if d.hearing_impaired {
+            flags.push("HI");
+        }
+        if d.visual_impaired {
+            flags.push("VI");
+        }
+        flags.join(",")
+    }
+}
+
+/// Compact or verbose flag string for a subtitle track.
+///
+/// Subtitles omit `O` (original, audio-only) and `VI` (visual-impaired, audio-only).
+fn sub_flag_str(d: &Dispositions, verbose: bool) -> String {
+    if verbose {
+        let mut names: Vec<&str> = Vec::new();
+        if d.default {
+            names.push("default");
+        }
+        if d.forced {
+            names.push("forced");
+        }
+        if d.commentary {
+            names.push("commentary");
+        }
+        if d.hearing_impaired {
+            names.push("hearing-impaired");
+        }
+        names.join(", ")
+    } else {
+        let mut flags: Vec<&str> = Vec::new();
+        if d.default {
+            flags.push("D");
+        }
+        if d.forced {
+            flags.push("F");
+        }
+        if d.commentary {
+            flags.push("C");
+        }
+        if d.hearing_impaired {
+            flags.push("HI");
+        }
+        flags.join(",")
+    }
 }
 
 // ── Column helpers ────────────────────────────────────────────────────────────
@@ -410,13 +567,14 @@ mod tests {
                 codec: "subrip".to_string(),
                 language: Some("eng".to_string()),
                 title: Some("Signs & Songs".to_string()),
+                ..Default::default()
             }],
             duration_secs: Some(2537.0),
         };
 
         let mut buf = Vec::<u8>::new();
         let path = std::path::Path::new("episode01.mkv");
-        render(&probe, path, &mut buf).unwrap();
+        render(&probe, path, false, &mut buf).unwrap();
         let output = String::from_utf8(buf).unwrap();
 
         assert!(output.contains("episode01.mkv"), "filename in header");

@@ -4,6 +4,8 @@ use std::fs;
 use std::io::Write;
 use std::path::Path;
 
+use console::style;
+
 use crate::config::*;
 use crate::error::{Error, Result};
 use crate::layers::{discover_layers, sidecar_path};
@@ -57,8 +59,13 @@ fn run_config_directory(target: &Path, out: &mut dyn Write) -> Result<()> {
     files.sort();
 
     if files.is_empty() {
-        writeln!(out, "No video files found in {}.", target.display())
-            .map_err(crate::io_render_err)?;
+        writeln!(
+            out,
+            "  {}  No video files found in {}.",
+            style("–").dim(),
+            target.display()
+        )
+        .map_err(crate::io_render_err)?;
         return Ok(());
     }
 
@@ -92,25 +99,60 @@ fn render(
     issues: &[ValidationIssue],
     out: &mut dyn Write,
 ) -> std::io::Result<()> {
-    writeln!(out, "bento config for {}", target.display())?;
+    let filename = target
+        .file_name()
+        .unwrap_or(target.as_os_str())
+        .to_string_lossy();
+
+    // ── Header ───────────────────────────────────────────────────────────────
+    writeln!(out)?;
+    writeln!(
+        out,
+        "  {}  {}",
+        style("bento config").bold(),
+        style(&*filename).bold()
+    )?;
+    writeln!(out, "  {}", style(target.display()).dim())?;
     writeln!(out)?;
 
-    writeln!(out, "Layers loaded (lowest → highest precedence):")?;
-    writeln!(out, "  {}", Layer::Defaults.display())?;
+    // ── Layers ───────────────────────────────────────────────────────────────
+    writeln!(
+        out,
+        "  {}  {}",
+        style("Layers").bold(),
+        style("(lowest → highest precedence)").dim()
+    )?;
+    writeln!(
+        out,
+        "    {}  {}",
+        style("·").dim(),
+        style(Layer::Defaults.display()).dim()
+    )?;
     for (layer, _) in layers {
-        writeln!(out, "  {}", layer.display())?;
+        writeln!(
+            out,
+            "    {}  {}",
+            style("·").dim(),
+            styled_layer_line(layer)
+        )?;
     }
     let sidecar = sidecar_path(target);
     if !layers.iter().any(|(l, _)| matches!(l, Layer::PerFile(_))) {
         writeln!(
             out,
-            "  per-file   (none — would be at {})",
-            sidecar.display()
+            "    {}  {}",
+            style("·").dim(),
+            style(format!(
+                "per-file   (none — would be at {})",
+                sidecar.display()
+            ))
+            .dim()
         )?;
     }
     writeln!(out)?;
 
-    writeln!(out, "Resolved settings:")?;
+    // ── Resolved settings ────────────────────────────────────────────────────
+    writeln!(out, "  {}", style("Resolved settings").bold())?;
     let value =
         toml::Value::try_from(&resolved.config).expect("resolved config is always serializable");
     let mut leaves: Vec<(String, toml::Value)> = Vec::new();
@@ -119,47 +161,81 @@ fn render(
 
     let key_width = leaves.iter().map(|(k, _)| k.len()).max().unwrap_or(0);
     for (path, val) in &leaves {
-        let layer_label = resolved
+        let layer_kind = resolved
             .provenance
             .layer_for(path)
             .map(|l| l.kind())
             .unwrap_or("?");
         writeln!(
             out,
-            "  {:<width$}  = {:<24}  [{}]",
+            "    {:<width$}  = {:<24}  {}",
             path,
-            format_scalar(val),
-            layer_label,
+            style(format_scalar(val)).dim(),
+            styled_layer_badge(layer_kind),
             width = key_width,
         )?;
     }
     writeln!(out)?;
 
+    // ── Track lists ──────────────────────────────────────────────────────────
     if let Some(tracks) = &resolved.config.audio.tracks {
-        let layer = resolved
+        let layer_kind = resolved
             .provenance
             .layer_for("audio.tracks")
             .map(|l| l.kind())
             .unwrap_or("?");
-        writeln!(out, "audio.tracks ({}) [{}]:", tracks.len(), layer)?;
+        writeln!(
+            out,
+            "  {}  {}  {}",
+            style("audio.tracks").bold(),
+            style(format!(
+                "{} {}",
+                tracks.len(),
+                if tracks.len() == 1 { "track" } else { "tracks" }
+            ))
+            .dim(),
+            styled_layer_badge(layer_kind),
+        )?;
         for (i, t) in tracks.iter().enumerate() {
-            writeln!(out, "  [{}] {}", i, format_audio_track(t))?;
+            writeln!(
+                out,
+                "    {}  {}",
+                style(format!("[{i}]")).dim(),
+                format_audio_track(t)
+            )?;
         }
         writeln!(out)?;
     }
     if let Some(tracks) = &resolved.config.subtitles.tracks {
-        let layer = resolved
+        let layer_kind = resolved
             .provenance
             .layer_for("subtitles.tracks")
             .map(|l| l.kind())
             .unwrap_or("?");
-        writeln!(out, "subtitles.tracks ({}) [{}]:", tracks.len(), layer)?;
+        writeln!(
+            out,
+            "  {}  {}  {}",
+            style("subtitles.tracks").bold(),
+            style(format!(
+                "{} {}",
+                tracks.len(),
+                if tracks.len() == 1 { "track" } else { "tracks" }
+            ))
+            .dim(),
+            styled_layer_badge(layer_kind),
+        )?;
         for (i, t) in tracks.iter().enumerate() {
-            writeln!(out, "  [{}] {}", i, format_subtitle_track(t))?;
+            writeln!(
+                out,
+                "    {}  {}",
+                style(format!("[{i}]")).dim(),
+                format_subtitle_track(t)
+            )?;
         }
         writeln!(out)?;
     }
 
+    // ── Validation ───────────────────────────────────────────────────────────
     let errors: Vec<&ValidationIssue> = issues
         .iter()
         .filter(|i| i.severity == Severity::Error)
@@ -169,25 +245,81 @@ fn render(
         .filter(|i| i.severity == Severity::Warning)
         .collect();
 
-    writeln!(out, "Validation:")?;
+    writeln!(out, "  {}", style("Validation").bold())?;
     if errors.is_empty() && warnings.is_empty() {
-        writeln!(out, "  ok (0 errors, 0 warnings)")?;
+        writeln!(
+            out,
+            "    {}  ok (0 errors, 0 warnings)",
+            style("✓").green().bold()
+        )?;
     } else {
         if !errors.is_empty() {
-            writeln!(out, "  {} error(s):", errors.len())?;
+            writeln!(
+                out,
+                "    {}  {} error(s):",
+                style("✗").red().bold(),
+                errors.len()
+            )?;
             for e in &errors {
-                writeln!(out, "    [error]   {}: {}", e.path, e.message)?;
+                writeln!(
+                    out,
+                    "         {}  {}: {}",
+                    style("[error]").red(),
+                    style(&e.path).bold(),
+                    e.message
+                )?;
             }
         }
         if !warnings.is_empty() {
-            writeln!(out, "  {} warning(s):", warnings.len())?;
+            writeln!(
+                out,
+                "    {}  {} warning(s):",
+                style("⚠").yellow().bold(),
+                warnings.len()
+            )?;
             for w in &warnings {
-                writeln!(out, "    [warning] {}: {}", w.path, w.message)?;
+                writeln!(
+                    out,
+                    "         {}  {}: {}",
+                    style("[warning]").yellow(),
+                    style(&w.path).bold(),
+                    w.message
+                )?;
             }
         }
     }
 
     Ok(())
+}
+
+/// Render a layer as a styled string for the layers list.
+fn styled_layer_line(layer: &Layer) -> String {
+    match layer {
+        Layer::Defaults => style("defaults (built-in)").dim().to_string(),
+        Layer::Global(p) => format!("{}   {}", style("global").cyan(), style(p.display()).dim()),
+        Layer::Directory(p) => format!(
+            "{}   {}",
+            style("directory").yellow(),
+            style(p.display()).dim()
+        ),
+        Layer::PerFile(p) => format!(
+            "{}   {}",
+            style("per-file").green(),
+            style(p.display()).dim()
+        ),
+        Layer::Cli => style("cli").magenta().to_string(),
+    }
+}
+
+/// Render a layer kind string as a colored `[kind]` badge.
+fn styled_layer_badge(kind: &str) -> String {
+    match kind {
+        "global" => format!("[{}]", style(kind).cyan()),
+        "directory" => format!("[{}]", style(kind).yellow()),
+        "per-file" => format!("[{}]", style(kind).green()),
+        "cli" => format!("[{}]", style(kind).magenta()),
+        _ => format!("[{}]", style(kind).dim()),
+    }
 }
 
 fn collect_leaves(value: &toml::Value, prefix: String, out: &mut Vec<(String, toml::Value)>) {

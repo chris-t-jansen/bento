@@ -76,8 +76,8 @@ tracks = [{ source = 1, lang = "jpn" }]
     let result = run_config(&video, &mut out);
     assert!(result.is_ok(), "unexpected error: {:?}", result);
     let text = String::from_utf8(out).unwrap();
-    assert!(text.contains("bento config for"));
-    assert!(text.contains("Validation:"));
+    assert!(text.contains("bento config"));
+    assert!(text.contains("Validation"));
 }
 
 #[test]
@@ -306,7 +306,7 @@ tracks = [{ source = 1 }]
     );
     let text = String::from_utf8(out).unwrap();
     assert!(
-        text.contains("warning: output exists"),
+        text.contains("output exists, skipping:"),
         "expected skip warning:\n{}",
         text
     );
