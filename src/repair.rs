@@ -45,14 +45,9 @@ pub fn run_repair_at(path: &Path, yes: bool, out: &mut dyn Write) -> Result<()> 
             style("⚠").yellow().bold()
         )
         .map_err(crate::io_render_err)?;
-        writeln!(
-            out,
-            "     expected at: {}",
-            style(path.display()).dim()
-        )
-        .map_err(crate::io_render_err)?;
-        writeln!(out, "     Run `bento check [-y]` to create it.")
+        writeln!(out, "     expected at: {}", style(path.display()).dim())
             .map_err(crate::io_render_err)?;
+        writeln!(out, "     Run `bento check [-y]` to create it.").map_err(crate::io_render_err)?;
         return Ok(());
     }
 
@@ -70,10 +65,8 @@ pub fn run_repair_at(path: &Path, yes: bool, out: &mut dyn Write) -> Result<()> 
                 style("✗").red().bold()
             )
             .map_err(crate::io_render_err)?;
-            writeln!(out, "     {}", style(path.display()).dim())
-                .map_err(crate::io_render_err)?;
-            writeln!(out, "     {}", style(&e.to_string()).dim())
-                .map_err(crate::io_render_err)?;
+            writeln!(out, "     {}", style(path.display()).dim()).map_err(crate::io_render_err)?;
+            writeln!(out, "     {}", style(&e.to_string()).dim()).map_err(crate::io_render_err)?;
             writeln!(out).map_err(crate::io_render_err)?;
 
             if confirm(
@@ -117,8 +110,7 @@ pub fn run_repair_at(path: &Path, yes: bool, out: &mut dyn Write) -> Result<()> 
             style("✓").green().bold()
         )
         .map_err(crate::io_render_err)?;
-        writeln!(out, "     {}", style(path.display()).dim())
-            .map_err(crate::io_render_err)?;
+        writeln!(out, "     {}", style(path.display()).dim()).map_err(crate::io_render_err)?;
         return Ok(());
     }
 
