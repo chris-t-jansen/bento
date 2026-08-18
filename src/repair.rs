@@ -879,6 +879,40 @@ mod tests {
         );
     }
 
+    /// Simulates a global config generated before `force_8bit` existed: repair
+    /// must detect it as missing and insert it at its baked-in default, with
+    /// its doc comment, same as any other newly-added field.
+    #[test]
+    fn repair_inserts_force_8bit_into_pre_existing_global_config() {
+        let dir = TempDir::new("force_8bit");
+        let original = crate::bootstrap::generate_global_config_text();
+        let modified = original.replace("force_8bit = true\n", "");
+        dir.write("config.toml", &modified);
+        let cfg = dir.path.join("config.toml");
+
+        // Dry run: reported as missing before any confirmation is reached.
+        let (out, _) = run(&cfg, false);
+        assert!(
+            out.contains("video.force_8bit"),
+            "field listed; got: {}",
+            out
+        );
+
+        // Actual run: inserted at its baked-in default with its doc comment.
+        let (out, r) = run(&cfg, true);
+        r.unwrap();
+        assert!(out.contains("field(s) added"), "confirmed; got: {}", out);
+
+        let repaired = dir.read("config.toml");
+        assert!(repaired.contains("force_8bit = true"));
+        assert!(
+            repaired.contains("# (added by bento repair)"),
+            "repair marker present; got:\n{}",
+            repaired
+        );
+        crate::config::Config::from_toml_str(&repaired).expect("repaired config parses");
+    }
+
     // -------------------------------------------------------------------------
     // apply_renames
     // -------------------------------------------------------------------------
