@@ -159,9 +159,9 @@ fn parse_timestamp_line(line: &str) -> Option<(SrtTime, SrtTime)> {
 
 fn parse_srt_time(s: &str) -> Option<SrtTime> {
     let s = s.trim();
-    let (hms, ms_str) = match s.rfind([',', '.']) {
-        Some(idx) => (&s[..idx], &s[idx + 1..]),
-        None => return None,
+    let (hms, ms_str) = {
+        let idx = s.rfind([',', '.'])?;
+        (&s[..idx], &s[idx + 1..])
     };
     let mut parts = hms.split(':');
     let h: u64 = parts.next()?.parse().ok()?;
