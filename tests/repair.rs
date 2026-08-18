@@ -44,9 +44,21 @@ impl Drop for TestDir {
     }
 }
 
+/// Mimics a non-interactive shell (piped input, CI): any confirmation
+/// attempt fails immediately instead of blocking on real stdin. See
+/// bento::layers::Confirmer for why this is injected rather than relying on
+/// the ambient TTY-ness of the test process's stdin.
+struct NonInteractive;
+
+impl bento::layers::Confirmer for NonInteractive {
+    fn confirm(&mut self, _question: &str) -> bento::error::Result<bool> {
+        Err(bento::error::Error::NotInteractive)
+    }
+}
+
 fn run(path: &std::path::Path, yes: bool) -> (String, bento::error::Result<()>) {
     let mut buf: Vec<u8> = Vec::new();
-    let r = run_repair_at(path, yes, &mut buf);
+    let r = run_repair_at(path, yes, &mut NonInteractive, &mut buf);
     (String::from_utf8(buf).unwrap(), r)
 }
 
