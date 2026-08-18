@@ -213,6 +213,25 @@ mod tests {
         }
     }
 
+    /// Mimics a non-interactive shell (piped input, CI): any confirmation
+    /// attempt fails immediately instead of blocking on real stdin.
+    struct NonInteractive;
+
+    impl Confirmer for NonInteractive {
+        fn confirm(&mut self, _question: &str) -> Result<bool> {
+            Err(Error::NotInteractive)
+        }
+    }
+
+    /// Returns a fixed answer, as if a real prompt had been answered.
+    struct Fixed(bool);
+
+    impl Confirmer for Fixed {
+        fn confirm(&mut self, _question: &str) -> Result<bool> {
+            Ok(self.0)
+        }
+    }
+
     #[test]
     fn resolve_subtitle_path_uses_config_dir_for_relative() {
         let config_dir = PathBuf::from("/show/season1");
@@ -233,6 +252,53 @@ mod tests {
         assert!(text_is_blank("\u{FEFF}"));
         assert!(!text_is_blank("# comment"));
         assert!(!text_is_blank("[audio]\n"));
+    }
+
+    #[test]
+    fn ensure_global_config_missing_non_interactive_errors_instead_of_prompting() {
+        let dir = TestDir::new("check_non_interactive");
+        let path = dir.path.join("config.toml");
+        assert!(!path.exists());
+
+        let mut buf = Vec::new();
+        let result = ensure_global_config(&path, false, &mut NonInteractive, &mut buf);
+        assert!(
+            matches!(result, Err(Error::NotInteractive)),
+            "got: {:?}",
+            result
+        );
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn ensure_global_config_confirmer_declines_skips_creation() {
+        let dir = TestDir::new("check_declines");
+        let path = dir.path.join("config.toml");
+        assert!(!path.exists());
+
+        let mut buf = Vec::new();
+        ensure_global_config(&path, false, &mut Fixed(false), &mut buf).expect("should not error");
+        let out = String::from_utf8(buf).unwrap();
+
+        assert!(!path.exists());
+        assert!(out.contains("skipped"), "got: {}", out);
+    }
+
+    #[test]
+    fn ensure_global_config_confirmer_accepts_creates_missing() {
+        let dir = TestDir::new("check_accepts");
+        let path = dir.path.join("config.toml");
+        assert!(!path.exists());
+
+        let mut buf = Vec::new();
+        ensure_global_config(&path, false, &mut Fixed(true), &mut buf).expect("should write");
+        let out = String::from_utf8(buf).unwrap();
+
+        assert!(path.exists());
+        assert!(out.contains("wrote"), "got: {}", out);
+
+        let written = std::fs::read_to_string(&path).unwrap();
+        Config::from_toml_str(&written).expect("written config parses");
     }
 
     #[test]
