@@ -188,6 +188,16 @@ pub fn build_ffmpeg_args(
         args.push("libx264".into());
     }
 
+    // Force 8-bit 4:2:0 output regardless of the source's pixel format. Many
+    // anime BD sources are 10-bit (yuv420p10le) purely for compression
+    // efficiency; without this, ffmpeg inherits that format and silently
+    // produces a High10-profile H.264 stream that Pi-class Jellyfin clients
+    // can't hardware-decode, forcing a software transcode on playback.
+    if config.video.force_8bit.unwrap_or(true) {
+        args.push("-pix_fmt".into());
+        args.push("yuv420p".into());
+    }
+
     if let Some(preset) = config.video.preset {
         args.push("-preset".into());
         args.push(preset.to_string());
@@ -900,5 +910,104 @@ mod tests {
         };
         let vf = build_video_filters(&config, &probe, &[], None);
         assert_eq!(vf, "yadif,hqdn3d=3:2:6:4.5");
+    }
+
+    // --- force_8bit -------------------------------------------------------
+
+    fn bare_probe() -> SourceProbe {
+        use crate::pipeline::probe::VideoStreamInfo;
+        SourceProbe {
+            video: VideoStreamInfo {
+                width: 1920,
+                height: 1080,
+                ..Default::default()
+            },
+            audio: Vec::new(),
+            subtitles: Vec::new(),
+            duration_secs: None,
+        }
+    }
+
+    /// Default (no encoder configured, so the `libx264` fallback branch
+    /// fires): `force_8bit` defaults to true and forces `-pix_fmt yuv420p`.
+    #[test]
+    fn force_8bit_defaults_to_forcing_pix_fmt_with_no_encoder_configured() {
+        let config = Config::default();
+        let probe = bare_probe();
+        let args = build_ffmpeg_args(
+            Path::new("in.mkv"),
+            Path::new("out.mp4"),
+            &config,
+            &probe,
+            &[],
+            None,
+            None,
+        );
+        let idx = args
+            .iter()
+            .position(|a| a == "-pix_fmt")
+            .expect("expected -pix_fmt in args");
+        assert_eq!(args[idx + 1], "yuv420p");
+    }
+
+    /// Same default, but with an explicit encoder configured — `force_8bit`
+    /// applies regardless of which codec branch chose `-c:v`.
+    #[test]
+    fn force_8bit_defaults_to_forcing_pix_fmt_with_encoder_configured() {
+        use crate::config::{Encoder, EncoderName, Video};
+        let config = Config {
+            video: Video {
+                encoder: Some(Encoder {
+                    name: Some(EncoderName::X265),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let probe = bare_probe();
+        let args = build_ffmpeg_args(
+            Path::new("in.mkv"),
+            Path::new("out.mp4"),
+            &config,
+            &probe,
+            &[],
+            None,
+            None,
+        );
+        let idx = args
+            .iter()
+            .position(|a| a == "-pix_fmt")
+            .expect("expected -pix_fmt in args");
+        assert_eq!(args[idx + 1], "yuv420p");
+    }
+
+    /// `force_8bit = false` omits `-pix_fmt` entirely, leaving ffmpeg to
+    /// inherit the source's native pixel format.
+    #[test]
+    fn force_8bit_false_omits_pix_fmt() {
+        use crate::config::Video;
+        let config = Config {
+            video: Video {
+                force_8bit: Some(false),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let probe = bare_probe();
+        let args = build_ffmpeg_args(
+            Path::new("in.mkv"),
+            Path::new("out.mp4"),
+            &config,
+            &probe,
+            &[],
+            None,
+            None,
+        );
+        assert!(
+            !args.iter().any(|a| a == "-pix_fmt"),
+            "expected no -pix_fmt in args: {:?}",
+            args
+        );
     }
 }

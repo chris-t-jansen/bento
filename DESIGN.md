@@ -228,8 +228,9 @@ A single section governing the video stream. Unlike `[audio]` and `[subtitles]`,
 
   Per the schema's leaf-level resolution rule, individual fields within `encoder` resolve from the highest layer that sets them: writing `encoder = { crf = 22 }` at directory level overrides only `crf`, leaving `name` and `tune` to fall through to the global config (or, failing that, baked-in defaults). This makes single-field overrides ergonomic but introduces a coupling hazard — a user who writes `encoder = { name = "x265" }` at directory level inherits `crf` from below, which is likely scaled for x264. The hazard is caught by **cross-field validation**: at config-resolution time, Bento checks that the resolved `crf` is in a reasonable range for the resolved `name` (an x264-typical CRF ≤19 paired with x265, or an x265-typical CRF ≥24 paired with x264) and warns identifying the likely error. Suppressed by `[video].warn_crf_codec_mismatch = false` or `--no-warn-crf-codec-mismatch`. Validation catches the actual bug — incompatible codec/CRF combination — rather than the structural proxy of "encoder fields didn't all come from the same layer."
 - `preset` — speed/quality tradeoff. Accepted values: `ultrafast`, `superfast`, `veryfast`, `faster`, `fast`, `medium`, `slow`, `slower`, `veryslow`, `placebo`. Default `"medium"`. Slower presets test more encoding options for better compression at the same quality, but the gains shrink quickly: `veryslow` over `medium` is roughly 8-10× the encode time for ~5% smaller files at the same CRF. `placebo` doubles encode time over `veryslow` for negligible gain and is widely considered impractical. Users who care about every byte will set this to `slow` or `veryslow`; `medium` is the friendlier default for first runs against a large library. Preset names are identical between x264 and x265, so `preset` stays a top-level field rather than moving into the encoder table.
+- `force_8bit` — when `true` (default), forces 8-bit 4:2:0 output (`-pix_fmt yuv420p`) regardless of the source's native pixel format. Many Blu-ray/anime sources are 10-bit (`yuv420p10le`), encoded that way purely for compression efficiency rather than for HDR — left unforced, ffmpeg inherits the source's bit depth and silently produces a High10-profile H.264 stream that Pi-class Jellyfin clients cannot hardware-decode, forcing a software transcode on playback instead of direct-play. This is classed under core encoding rather than source preprocessing (below) because it's inherent to the encode step itself, the same way `crf`/`tune` shape output quality, rather than an optional filter pass. Set to `false` to preserve the source's native pixel format — e.g. for archival encodes where Pi/browser direct-play compatibility isn't a goal. Out of scope for now: detecting and warning when this would clamp a genuinely HDR source (BT.2020 + PQ/HLG transfer) rather than an ordinary 10-bit-SDR one; see "HDR → SDR tone mapping" under Out of Scope.
 
-**Source preprocessing:** Defaults to `"none"` for every preprocessing field. Bento does not modify the source video unless explicitly requested — consistent with the "video in = video out" principle.
+**Source preprocessing:** Defaults to `"none"` for every preprocessing field. Bento does not modify the source video unless explicitly requested — consistent with the "video in = video out" principle. (`force_8bit` above is the one default-on exception; it's core encoding, not preprocessing.)
 
 - `crop` — black bar removal.
   - `crop = "none"` (default) — no crop.
@@ -270,6 +271,7 @@ detelecine = "none"
 denoise = "none"
 resolution = "original"
 never_upscale = true
+force_8bit = true
 ```
 
 **Example: directory config for an old DVD-era anime release:**

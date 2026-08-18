@@ -256,6 +256,7 @@ pub(crate) fn baked_defaults(resolved_encoder_name: Option<EncoderName>) -> Conf
             denoise: Some(Denoise::Off(DenoiseOff::None)),
             resolution: Some(Resolution::Mode(ResolutionMode::Original)),
             never_upscale: Some(true),
+            force_8bit: Some(true),
             warn_crf_codec_mismatch: Some(true),
         },
         audio: Audio {
@@ -334,6 +335,7 @@ impl Merge for Video {
         merge_inner(&mut self.denoise, higher.denoise);
         merge_inner(&mut self.resolution, higher.resolution);
         replace_if_some(&mut self.never_upscale, higher.never_upscale);
+        replace_if_some(&mut self.force_8bit, higher.force_8bit);
         replace_if_some(
             &mut self.warn_crf_codec_mismatch,
             higher.warn_crf_codec_mismatch,
@@ -480,6 +482,7 @@ mod tests {
         assert_eq!(enc.tune, Some(Tune::Animation));
         assert_eq!(r.config.video.preset, Some(Preset::Medium));
         assert_eq!(r.config.video.never_upscale, Some(true));
+        assert_eq!(r.config.video.force_8bit, Some(true));
 
         assert_eq!(r.config.audio.encoder.as_deref(), Some("aac"));
         assert_eq!(r.config.audio.bitrate, Some(192));
@@ -535,6 +538,22 @@ encoder = { name = "x264" }
         );
         let r = resolve(vec![(directory(), user)]);
         assert_eq!(r.config.video.encoder.unwrap().crf, Some(20));
+    }
+
+    #[test]
+    fn force_8bit_overridable_to_false() {
+        let d = parse(
+            r#"
+[video]
+force_8bit = false
+"#,
+        );
+        let r = resolve(vec![(directory(), d)]);
+        assert_eq!(r.config.video.force_8bit, Some(false));
+        assert_eq!(
+            r.provenance.layer_for("video.force_8bit"),
+            Some(&directory())
+        );
     }
 
     // --- Scalar leaf merge --------------------------------------------------

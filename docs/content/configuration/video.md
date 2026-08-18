@@ -21,6 +21,7 @@ encoder = {
     tune = "film" | "animation" | "grain" | "stillimage" | "psnr" | "ssim" | "fastdecode" | "zerolatency" | "none"
 }
 preset = "ultrafast" | "superfast" | "veryfast" | "faster" | "fast" | "medium" | "slow" | "slower" | "veryslow" | "placebo"
+force_8bit = <bool>
 
 # Source preprocessing
 crop          = "none" | "auto" | { top = <integer>, bottom = <integer>, left = <integer>, right = <integer> }
@@ -58,6 +59,14 @@ Groups the encoder and its dependent settings. Individual fields resolve indepen
 Speed/quality tradeoff. Default `"medium"`. Accepted values, fastest to slowest: `ultrafast`, `superfast`, `veryfast`, `faster`, `fast`, `medium`, `slow`, `slower`, `veryslow`, `placebo`.
 
 Slower presets test more encoding options for better compression at the same quality. The gains diminish quickly at the slow end — `veryslow` over `medium` is roughly 8–10× the encode time for ~5% smaller files. For a large library, `medium` is a sensible starting point; raise it for archival encodes where you want the best compression.
+
+### `force_8bit = <bool>` {#force_8bit}
+
+When `true` (default), forces 8-bit 4:2:0 output (`-pix_fmt yuv420p`) regardless of the source's native pixel format.
+
+Many Blu-ray/anime sources are 10-bit (`yuv420p10le`) purely for compression efficiency, not for HDR. Left unforced, ffmpeg inherits the source's bit depth and silently produces a High10-profile H.264 stream that Pi-class Jellyfin clients can't hardware-decode — the file plays, but falls back to a software transcode instead of direct-play. Set to `false` to preserve the source's native pixel format, e.g. for archival encodes where Pi/browser compatibility isn't a goal.
+
+This doesn't currently detect or warn about genuinely HDR sources (BT.2020 + PQ/HLG color) — clamping one of those to 8-bit SDR without tone mapping will look wrong, not just fail to direct-play. See [DESIGN.md](https://github.com/chris-t-jansen/bento/blob/main/DESIGN.md) for the tracked follow-up.
 
 ### `crop = "none" | "auto" | <inline table>` {#crop}
 
@@ -132,6 +141,7 @@ detelecine = "none"
 denoise = "none"
 resolution = "original"
 never_upscale = true
+force_8bit = true
 ```
 
 **Directory config for an old DVD-era release:**

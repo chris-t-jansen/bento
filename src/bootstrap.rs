@@ -111,6 +111,14 @@ resolution = "original"
 # Keep true unless upscaling is genuinely intended (rare).
 never_upscale = true
 
+# Force 8-bit 4:2:0 (yuv420p) output regardless of the source's pixel format.
+# Many Blu-ray/anime sources are 10-bit (yuv420p10le); without this, ffmpeg
+# inherits that format and silently produces a High10-profile H.264 stream
+# that Pi-class Jellyfin clients can't hardware-decode, breaking direct-play.
+# Set false to preserve the source's native pixel format (e.g. for archival
+# encodes where Pi/browser compatibility doesn't matter).
+force_8bit = true
+
 # Warn when resolved CRF and encoder.name look mismatched (the x264 and x265
 # CRF scales are NOT interchangeable).
 warn_crf_codec_mismatch = true
