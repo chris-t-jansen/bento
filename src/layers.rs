@@ -94,7 +94,7 @@ pub fn global_config_path() -> Option<PathBuf> {
 pub fn ensure_global_config(
     path: &Path,
     yes: bool,
-    confirmer: &mut dyn Confirmer,
+    confirmer: &dyn Confirmer,
     out: &mut dyn Write,
 ) -> Result<()> {
     if path.exists() {
@@ -114,13 +114,7 @@ pub fn ensure_global_config(
     writeln!(out, "     expected at: {}", style(path.display()).dim())
         .map_err(crate::io_render_err)?;
 
-    let should_create = if yes {
-        true
-    } else {
-        confirmer.confirm("Generate now?")?
-    };
-
-    if should_create {
+    if confirm(yes, confirmer, "Generate now?")? {
         crate::bootstrap::write_global_config(path)?;
         writeln!(out, "     wrote {}", path.display()).map_err(crate::io_render_err)?;
     } else {
@@ -134,7 +128,17 @@ pub fn ensure_global_config(
 /// or not being, a terminal — [`Terminal`] does that for the CLI, while tests
 /// can supply a fixed answer instead of exercising the real prompt.
 pub trait Confirmer {
-    fn confirm(&mut self, question: &str) -> Result<bool>;
+    fn confirm(&self, question: &str) -> Result<bool>;
+}
+
+/// `yes` always wins without consulting `confirmer`; otherwise defers to it.
+/// Centralizes that short-circuit so `repair` and `check` share one policy
+/// instead of each re-implementing it.
+pub fn confirm(yes: bool, confirmer: &dyn Confirmer, question: &str) -> Result<bool> {
+    if yes {
+        return Ok(true);
+    }
+    confirmer.confirm(question)
 }
 
 /// Prompts the real terminal. Refuses with [`Error::NotInteractive`] when
@@ -143,7 +147,7 @@ pub trait Confirmer {
 pub struct Terminal;
 
 impl Confirmer for Terminal {
-    fn confirm(&mut self, question: &str) -> Result<bool> {
+    fn confirm(&self, question: &str) -> Result<bool> {
         if std::io::IsTerminal::is_terminal(&std::io::stdin()) {
             confirm_via_stdin(question)
         } else {
@@ -208,7 +212,7 @@ mod tests {
     struct Unreachable;
 
     impl Confirmer for Unreachable {
-        fn confirm(&mut self, question: &str) -> Result<bool> {
+        fn confirm(&self, question: &str) -> Result<bool> {
             panic!("test unexpectedly prompted for confirmation: {question}");
         }
     }
@@ -218,7 +222,7 @@ mod tests {
     struct NonInteractive;
 
     impl Confirmer for NonInteractive {
-        fn confirm(&mut self, _question: &str) -> Result<bool> {
+        fn confirm(&self, _question: &str) -> Result<bool> {
             Err(Error::NotInteractive)
         }
     }
@@ -227,7 +231,7 @@ mod tests {
     struct Fixed(bool);
 
     impl Confirmer for Fixed {
-        fn confirm(&mut self, _question: &str) -> Result<bool> {
+        fn confirm(&self, _question: &str) -> Result<bool> {
             Ok(self.0)
         }
     }
@@ -261,7 +265,7 @@ mod tests {
         assert!(!path.exists());
 
         let mut buf = Vec::new();
-        let result = ensure_global_config(&path, false, &mut NonInteractive, &mut buf);
+        let result = ensure_global_config(&path, false, &NonInteractive, &mut buf);
         assert!(
             matches!(result, Err(Error::NotInteractive)),
             "got: {:?}",
@@ -277,7 +281,7 @@ mod tests {
         assert!(!path.exists());
 
         let mut buf = Vec::new();
-        ensure_global_config(&path, false, &mut Fixed(false), &mut buf).expect("should not error");
+        ensure_global_config(&path, false, &Fixed(false), &mut buf).expect("should not error");
         let out = String::from_utf8(buf).unwrap();
 
         assert!(!path.exists());
@@ -291,7 +295,7 @@ mod tests {
         assert!(!path.exists());
 
         let mut buf = Vec::new();
-        ensure_global_config(&path, false, &mut Fixed(true), &mut buf).expect("should write");
+        ensure_global_config(&path, false, &Fixed(true), &mut buf).expect("should write");
         let out = String::from_utf8(buf).unwrap();
 
         assert!(path.exists());
@@ -308,7 +312,7 @@ mod tests {
         assert!(!path.exists());
 
         let mut buf = Vec::new();
-        ensure_global_config(&path, true, &mut Unreachable, &mut buf).expect("should write");
+        ensure_global_config(&path, true, &Unreachable, &mut buf).expect("should write");
         let out = String::from_utf8(buf).unwrap();
 
         assert!(path.exists());
@@ -326,7 +330,7 @@ mod tests {
         assert!(!path.parent().unwrap().exists());
 
         let mut buf = Vec::new();
-        ensure_global_config(&path, true, &mut Unreachable, &mut buf).expect("should write");
+        ensure_global_config(&path, true, &Unreachable, &mut buf).expect("should write");
         assert!(path.exists());
     }
 
@@ -336,7 +340,7 @@ mod tests {
         let path = dir.write("config.toml", "[output]\ncontainer = \"mp4\"\n");
 
         let mut buf = Vec::new();
-        ensure_global_config(&path, false, &mut Unreachable, &mut buf).expect("should report ok");
+        ensure_global_config(&path, false, &Unreachable, &mut buf).expect("should report ok");
         let out = String::from_utf8(buf).unwrap();
 
         assert!(out.contains("global config: ok"));
@@ -349,7 +353,7 @@ mod tests {
         let path = dir.write("config.toml", "this is = not = valid toml");
 
         let mut buf = Vec::new();
-        let result = ensure_global_config(&path, false, &mut Unreachable, &mut buf);
+        let result = ensure_global_config(&path, false, &Unreachable, &mut buf);
         assert!(
             matches!(result, Err(crate::error::Error::Toml { .. })),
             "got: {:?}",
@@ -364,7 +368,7 @@ mod tests {
         let path = dir.write("config.toml", original);
 
         let mut buf = Vec::new();
-        ensure_global_config(&path, true, &mut Unreachable, &mut buf).expect("ok");
+        ensure_global_config(&path, true, &Unreachable, &mut buf).expect("ok");
         assert_eq!(std::fs::read_to_string(&path).unwrap(), original);
     }
 }

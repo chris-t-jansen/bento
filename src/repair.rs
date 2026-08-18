@@ -32,7 +32,7 @@ const KEY_RENAMES: &[(&str, &str)] = &[("audio.normalize_mix", "audio.normalize_
 /// delegates to [`run_repair_at`].
 pub fn run_repair(yes: bool, out: &mut dyn Write) -> Result<()> {
     let path = crate::layers::global_config_path().ok_or(Error::NoConfigDir)?;
-    run_repair_at(&path, yes, &mut crate::layers::Terminal, out)
+    run_repair_at(&path, yes, &crate::layers::Terminal, out)
 }
 
 /// Path-explicit repair logic; separated so integration tests can supply a
@@ -43,7 +43,7 @@ pub fn run_repair(yes: bool, out: &mut dyn Write) -> Result<()> {
 pub fn run_repair_at(
     path: &Path,
     yes: bool,
-    confirmer: &mut dyn crate::layers::Confirmer,
+    confirmer: &dyn crate::layers::Confirmer,
     out: &mut dyn Write,
 ) -> Result<()> {
     if !path.exists() {
@@ -77,10 +77,10 @@ pub fn run_repair_at(
             writeln!(out, "     {}", style(&e.to_string()).dim()).map_err(crate::io_render_err)?;
             writeln!(out).map_err(crate::io_render_err)?;
 
-            if confirm(
-                "Regenerate from scratch? (Your existing config will be replaced.)",
+            if crate::layers::confirm(
                 yes,
                 confirmer,
+                "Regenerate from scratch? (Your existing config will be replaced.)",
             )? {
                 crate::bootstrap::write_global_config(path)?;
                 writeln!(
@@ -168,7 +168,7 @@ pub fn run_repair_at(
         writeln!(out).map_err(crate::io_render_err)?;
     }
 
-    if !confirm("Apply these changes to your global config?", yes, confirmer)? {
+    if !crate::layers::confirm(yes, confirmer, "Apply these changes to your global config?")? {
         writeln!(out, "     skipped").map_err(crate::io_render_err)?;
         return Ok(());
     }
@@ -532,17 +532,6 @@ pub(crate) fn format_value(value: &toml::Value) -> String {
     }
 }
 
-fn confirm(
-    question: &str,
-    yes: bool,
-    confirmer: &mut dyn crate::layers::Confirmer,
-) -> Result<bool> {
-    if yes {
-        return Ok(true);
-    }
-    confirmer.confirm(question)
-}
-
 // =============================================================================
 // Tests
 // =============================================================================
@@ -776,14 +765,14 @@ mod tests {
     struct NonInteractive;
 
     impl crate::layers::Confirmer for NonInteractive {
-        fn confirm(&mut self, _question: &str) -> crate::error::Result<bool> {
+        fn confirm(&self, _question: &str) -> crate::error::Result<bool> {
             Err(Error::NotInteractive)
         }
     }
 
     fn run(path: &std::path::Path, yes: bool) -> (String, crate::error::Result<()>) {
         let mut buf: Vec<u8> = Vec::new();
-        let r = run_repair_at(path, yes, &mut NonInteractive, &mut buf);
+        let r = run_repair_at(path, yes, &NonInteractive, &mut buf);
         (String::from_utf8(buf).unwrap(), r)
     }
 
