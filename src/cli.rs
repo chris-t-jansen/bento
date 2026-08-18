@@ -234,7 +234,7 @@ pub fn run() -> Result<()> {
 
 pub fn run_check(yes: bool, out: &mut dyn Write) -> Result<()> {
     let path = crate::layers::global_config_path().ok_or(Error::NoConfigDir)?;
-    crate::layers::ensure_global_config(&path, yes, out)?;
+    crate::layers::ensure_global_config(&path, yes, &crate::layers::Terminal, out)?;
 
     writeln!(out).map_err(crate::io_render_err)?;
 

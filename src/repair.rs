@@ -32,12 +32,20 @@ const KEY_RENAMES: &[(&str, &str)] = &[("audio.normalize_mix", "audio.normalize_
 /// delegates to [`run_repair_at`].
 pub fn run_repair(yes: bool, out: &mut dyn Write) -> Result<()> {
     let path = crate::layers::global_config_path().ok_or(Error::NoConfigDir)?;
-    run_repair_at(&path, yes, out)
+    run_repair_at(&path, yes, &crate::layers::Terminal, out)
 }
 
 /// Path-explicit repair logic; separated so integration tests can supply a
-/// temp-dir path without touching the real global config.
-pub fn run_repair_at(path: &Path, yes: bool, out: &mut dyn Write) -> Result<()> {
+/// temp-dir path without touching the real global config. `confirmer`
+/// likewise separates *how* a yes/no answer is obtained from this function's
+/// logic — the CLI passes [`crate::layers::Terminal`], tests pass a fixed
+/// answer instead of depending on the test process's ambient stdin.
+pub fn run_repair_at(
+    path: &Path,
+    yes: bool,
+    confirmer: &dyn crate::layers::Confirmer,
+    out: &mut dyn Write,
+) -> Result<()> {
     if !path.exists() {
         writeln!(
             out,
@@ -69,10 +77,10 @@ pub fn run_repair_at(path: &Path, yes: bool, out: &mut dyn Write) -> Result<()> 
             writeln!(out, "     {}", style(&e.to_string()).dim()).map_err(crate::io_render_err)?;
             writeln!(out).map_err(crate::io_render_err)?;
 
-            if confirm(
-                "Regenerate from scratch? (Your existing config will be replaced.)",
+            if crate::layers::confirm(
                 yes,
-                out,
+                confirmer,
+                "Regenerate from scratch? (Your existing config will be replaced.)",
             )? {
                 crate::bootstrap::write_global_config(path)?;
                 writeln!(
@@ -160,7 +168,7 @@ pub fn run_repair_at(path: &Path, yes: bool, out: &mut dyn Write) -> Result<()> 
         writeln!(out).map_err(crate::io_render_err)?;
     }
 
-    if !confirm("Apply these changes to your global config?", yes, out)? {
+    if !crate::layers::confirm(yes, confirmer, "Apply these changes to your global config?")? {
         writeln!(out, "     skipped").map_err(crate::io_render_err)?;
         return Ok(());
     }
@@ -524,17 +532,6 @@ pub(crate) fn format_value(value: &toml::Value) -> String {
     }
 }
 
-fn confirm(question: &str, yes: bool, _out: &mut dyn Write) -> Result<bool> {
-    if yes {
-        return Ok(true);
-    }
-    if std::io::IsTerminal::is_terminal(&std::io::stdin()) {
-        crate::layers::confirm_via_stdin(question)
-    } else {
-        Err(Error::NotInteractive)
-    }
-}
-
 // =============================================================================
 // Tests
 // =============================================================================
@@ -763,9 +760,19 @@ mod tests {
         }
     }
 
+    /// Mimics a non-interactive shell (piped input, CI): any confirmation
+    /// attempt fails immediately instead of blocking on real stdin.
+    struct NonInteractive;
+
+    impl crate::layers::Confirmer for NonInteractive {
+        fn confirm(&self, _question: &str) -> crate::error::Result<bool> {
+            Err(Error::NotInteractive)
+        }
+    }
+
     fn run(path: &std::path::Path, yes: bool) -> (String, crate::error::Result<()>) {
         let mut buf: Vec<u8> = Vec::new();
-        let r = run_repair_at(path, yes, &mut buf);
+        let r = run_repair_at(path, yes, &NonInteractive, &mut buf);
         (String::from_utf8(buf).unwrap(), r)
     }
 
