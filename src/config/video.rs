@@ -20,6 +20,10 @@ pub struct Video {
     pub never_upscale: Option<bool>,
     pub force_8bit: Option<bool>,
     pub warn_crf_codec_mismatch: Option<bool>,
+    /// Warn when `force_8bit` (default true) would clamp a genuinely HDR
+    /// source (BT.2020 + PQ/HLG transfer) to 8-bit SDR without tone mapping,
+    /// which looks wrong rather than merely failing to direct-play.
+    pub warn_hdr_force_8bit: Option<bool>,
 }
 
 // --- Encoder ----------------------------------------------------------------
@@ -321,6 +325,7 @@ denoise = "none"
 resolution = "original"
 never_upscale = true
 force_8bit = true
+warn_hdr_force_8bit = true
 "#;
         let v = Config::from_toml_str(toml_str).unwrap().video;
         let enc = v.encoder.expect("encoder present");
@@ -338,6 +343,7 @@ force_8bit = true
         );
         assert_eq!(v.never_upscale, Some(true));
         assert_eq!(v.force_8bit, Some(true));
+        assert_eq!(v.warn_hdr_force_8bit, Some(true));
     }
 
     /// Directory-config example: explicit crop + auto detelecine, sparse override.

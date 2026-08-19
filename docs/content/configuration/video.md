@@ -13,6 +13,7 @@ The `[video]` section governs the single video stream. Unlike `[audio]` and `[su
 [video]
 # Warnings
 warn_crf_codec_mismatch = <bool>
+warn_hdr_force_8bit = <bool>
 
 # Encoding
 encoder = {
@@ -66,7 +67,13 @@ When `true` (default), forces 8-bit 4:2:0 output (`-pix_fmt yuv420p`) regardless
 
 Many Blu-ray/anime sources are 10-bit (`yuv420p10le`) purely for compression efficiency, not for HDR. Left unforced, ffmpeg inherits the source's bit depth and silently produces a High10-profile H.264 stream that Pi-class Jellyfin clients can't hardware-decode — the file plays, but falls back to a software transcode instead of direct-play. Set to `false` to preserve the source's native pixel format, e.g. for archival encodes where Pi/browser compatibility isn't a goal.
 
-This doesn't currently detect or warn about genuinely HDR sources (BT.2020 + PQ/HLG color) — clamping one of those to 8-bit SDR without tone mapping will look wrong, not just fail to direct-play. See [DESIGN.md](https://github.com/chris-t-jansen/bento/blob/main/DESIGN.md) for the tracked follow-up.
+See [`warn_hdr_force_8bit`](#warn_hdr_force_8bit) for what happens when this would clamp a genuinely HDR source rather than an ordinary 10-bit-SDR one.
+
+### `warn_hdr_force_8bit = <bool>` {#warn_hdr_force_8bit}
+
+Warn when [`force_8bit`](#force_8bit) is about to clamp a genuinely HDR source — BT.2020 color primaries plus a PQ (`smpte2084`) or HLG (`arib-std-b67`) transfer function — to 8-bit SDR. Default `true`.
+
+`force_8bit` exists for the common case: a source that's 10-bit purely for compression efficiency, where clamping to 8-bit is exactly the right, silent fix. A genuinely HDR source is different — Bento doesn't tone-map, so clamping it without remapping color looks wrong (crushed or washed-out color), not just incompatible. This warning depends on the probed source's color metadata, so — like [`warn_unnormalized_downmix`](@/configuration/audio.md#warn_unnormalized_downmix) — it can only fire once the source file is actually probed (`bento convert`, dry-run or real), not from `bento config`.
 
 ### `crop = "none" | "auto" | <inline table>` {#crop}
 
