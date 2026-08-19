@@ -75,6 +75,8 @@ Warn when [`force_8bit`](#force_8bit) is about to clamp a genuinely HDR source �
 
 `force_8bit` exists for the common case: a source that's 10-bit purely for compression efficiency, where clamping to 8-bit is exactly the right, silent fix. A genuinely HDR source is different — Bento doesn't tone-map, so clamping it without remapping color looks wrong (crushed or washed-out color), not just incompatible. This warning depends on the probed source's color metadata, so — like [`warn_unnormalized_downmix`](@/configuration/audio.md#warn_unnormalized_downmix) — it can only fire once the source file is actually probed (`bento convert`, dry-run or real), not from `bento config`.
 
+**Known limitation:** detection relies entirely on the source file's own `color_primaries`/`color_transfer` tags, as reported by `ffprobe`. A source that's genuinely HDR but has those tags stripped, missing, or generic (`"unknown"`) will not trigger this warning — Bento can't detect HDR from pixel data alone, and deliberately doesn't try to; that's a much heavier kind of analysis than a transcode tool like Bento is scoped for. This is a false-negative risk, not a bug: most real-world rips carry accurate color tags, and a source with stripped metadata is already an edge case no tagging-based detection can catch. If you work with sources you know or suspect are HDR, don't rely solely on this warning — check with `ffprobe` yourself before trusting the default `force_8bit = true` behavior on them.
+
 ### `crop = "none" | "auto" | <inline table>` {#crop}
 
 Remove black bars. Default `"none"` — Bento does not crop unless explicitly requested.
