@@ -543,6 +543,7 @@ mod tests {
                 width: 1920,
                 height: 1080,
                 r_frame_rate: Some("24000/1001".to_string()),
+                ..Default::default()
             },
             audio: vec![
                 AudioStreamInfo {

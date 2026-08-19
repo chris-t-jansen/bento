@@ -886,7 +886,10 @@ mod tests {
     fn repair_inserts_force_8bit_into_pre_existing_global_config() {
         let dir = TempDir::new("force_8bit");
         let original = crate::bootstrap::generate_global_config_text();
-        let modified = original.replace("force_8bit = true\n", "");
+        // Leading newline keeps this from also matching inside the
+        // `warn_hdr_force_8bit = true` line, which contains the same
+        // "force_8bit = true" substring.
+        let modified = original.replace("\nforce_8bit = true\n", "\n");
         dir.write("config.toml", &modified);
         let cfg = dir.path.join("config.toml");
 
@@ -904,7 +907,11 @@ mod tests {
         assert!(out.contains("field(s) added"), "confirmed; got: {}", out);
 
         let repaired = dir.read("config.toml");
-        assert!(repaired.contains("force_8bit = true"));
+        assert!(
+            repaired.contains("\nforce_8bit = true\n"),
+            "got:\n{}",
+            repaired
+        );
         assert!(
             repaired.contains("# (added by bento repair)"),
             "repair marker present; got:\n{}",

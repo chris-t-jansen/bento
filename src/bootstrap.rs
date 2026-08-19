@@ -123,6 +123,12 @@ force_8bit = true
 # CRF scales are NOT interchangeable).
 warn_crf_codec_mismatch = true
 
+# Warn when force_8bit would clamp a genuinely HDR source (BT.2020 + PQ/HLG
+# transfer) to 8-bit SDR. Bento doesn't tone-map, so clamping HDR content
+# looks wrong (crushed/washed out) rather than merely failing to direct-play,
+# unlike the ordinary 10-bit-SDR case force_8bit exists for.
+warn_hdr_force_8bit = true
+
 # --- Encoder choice and CRF/tune ---
 #
 # These three fields are coupled. Per the schema's leaf-merge rule, you can

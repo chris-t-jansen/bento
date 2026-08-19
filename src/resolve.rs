@@ -258,6 +258,7 @@ pub(crate) fn baked_defaults(resolved_encoder_name: Option<EncoderName>) -> Conf
             never_upscale: Some(true),
             force_8bit: Some(true),
             warn_crf_codec_mismatch: Some(true),
+            warn_hdr_force_8bit: Some(true),
         },
         audio: Audio {
             encoder: Some("aac".to_string()),
@@ -340,6 +341,7 @@ impl Merge for Video {
             &mut self.warn_crf_codec_mismatch,
             higher.warn_crf_codec_mismatch,
         );
+        replace_if_some(&mut self.warn_hdr_force_8bit, higher.warn_hdr_force_8bit);
     }
 }
 
@@ -483,6 +485,7 @@ mod tests {
         assert_eq!(r.config.video.preset, Some(Preset::Medium));
         assert_eq!(r.config.video.never_upscale, Some(true));
         assert_eq!(r.config.video.force_8bit, Some(true));
+        assert_eq!(r.config.video.warn_hdr_force_8bit, Some(true));
 
         assert_eq!(r.config.audio.encoder.as_deref(), Some("aac"));
         assert_eq!(r.config.audio.bitrate, Some(192));

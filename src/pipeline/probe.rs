@@ -22,6 +22,26 @@ pub struct VideoStreamInfo {
     pub height: u32,
     /// Frame rate as a rational string, e.g. "24000/1001" or "25/1".
     pub r_frame_rate: Option<String>,
+    /// Color primaries as reported by ffprobe (e.g. "bt709", "bt2020").
+    pub color_primaries: Option<String>,
+    /// Transfer characteristics as reported by ffprobe (e.g. "bt709",
+    /// "smpte2084" (PQ), "arib-std-b67" (HLG)).
+    pub color_transfer: Option<String>,
+}
+
+impl VideoStreamInfo {
+    /// Whether the source looks like HDR: BT.2020 color primaries paired with
+    /// a PQ (`smpte2084`) or HLG (`arib-std-b67`) transfer function. A wide
+    /// gamut alone (bt2020) doesn't imply HDR — it's the transfer function
+    /// that determines how sample values map to light output.
+    pub fn is_hdr(&self) -> bool {
+        let primaries_wide = self.color_primaries.as_deref() == Some("bt2020");
+        let transfer_hdr = matches!(
+            self.color_transfer.as_deref(),
+            Some("smpte2084") | Some("arib-std-b67")
+        );
+        primaries_wide && transfer_hdr
+    }
 }
 
 /// Stream disposition flags as reported by ffprobe.
@@ -131,6 +151,8 @@ pub fn probe_source_streams(input: &Path) -> Result<SourceProbe> {
                     width: stream["width"].as_u64().unwrap_or(0) as u32,
                     height: stream["height"].as_u64().unwrap_or(0) as u32,
                     r_frame_rate: stream["r_frame_rate"].as_str().map(str::to_string),
+                    color_primaries: stream["color_primaries"].as_str().map(str::to_string),
+                    color_transfer: stream["color_transfer"].as_str().map(str::to_string),
                 };
             }
             "audio" => {
@@ -255,6 +277,55 @@ pub fn probe_cropdetect(input: &Path) -> Result<Option<String>> {
 
 #[cfg(test)]
 mod tests {
+    use super::VideoStreamInfo;
+
+    #[test]
+    fn is_hdr_true_for_bt2020_pq() {
+        let v = VideoStreamInfo {
+            color_primaries: Some("bt2020".to_string()),
+            color_transfer: Some("smpte2084".to_string()),
+            ..Default::default()
+        };
+        assert!(v.is_hdr());
+    }
+
+    #[test]
+    fn is_hdr_true_for_bt2020_hlg() {
+        let v = VideoStreamInfo {
+            color_primaries: Some("bt2020".to_string()),
+            color_transfer: Some("arib-std-b67".to_string()),
+            ..Default::default()
+        };
+        assert!(v.is_hdr());
+    }
+
+    #[test]
+    fn is_hdr_false_for_ordinary_10bit_sdr() {
+        // Most 10-bit anime BD sources are bt709 SDR encoded 10-bit purely
+        // for compression efficiency, not HDR.
+        let v = VideoStreamInfo {
+            color_primaries: Some("bt709".to_string()),
+            color_transfer: Some("bt709".to_string()),
+            ..Default::default()
+        };
+        assert!(!v.is_hdr());
+    }
+
+    #[test]
+    fn is_hdr_false_for_bt2020_primaries_without_hdr_transfer() {
+        // Wide gamut alone isn't HDR; the transfer function is what matters.
+        let v = VideoStreamInfo {
+            color_primaries: Some("bt2020".to_string()),
+            color_transfer: Some("bt709".to_string()),
+            ..Default::default()
+        };
+        assert!(!v.is_hdr());
+    }
+
+    #[test]
+    fn is_hdr_false_when_absent() {
+        assert!(!VideoStreamInfo::default().is_hdr());
+    }
 
     #[test]
     fn parse_cropdetect_extracts_last_crop_value() {

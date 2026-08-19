@@ -120,6 +120,10 @@ pub enum Command {
         #[arg(long = "no-warn-unnormalized-downmix")]
         no_warn_unnormalized_downmix: bool,
 
+        /// Suppress the "force_8bit will clamp an HDR source" warning.
+        #[arg(long = "no-warn-hdr-force-8bit")]
+        no_warn_hdr_force_8bit: bool,
+
         /// Suppress the "field resolved from baked-in default" warning.
         #[arg(long = "no-warn-missing")]
         no_warn_missing: bool,
@@ -185,6 +189,7 @@ pub fn run() -> Result<()> {
             no_warn_no_default,
             no_warn_crf_codec_mismatch,
             no_warn_unnormalized_downmix,
+            no_warn_hdr_force_8bit,
             no_warn_missing,
             no_warn_redundant,
             set,
@@ -209,6 +214,7 @@ pub fn run() -> Result<()> {
                 no_warn_no_default,
                 no_warn_crf_codec_mismatch,
                 no_warn_unnormalized_downmix,
+                no_warn_hdr_force_8bit,
                 no_warn_missing,
                 no_warn_redundant,
             };

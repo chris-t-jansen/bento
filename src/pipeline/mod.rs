@@ -38,6 +38,8 @@ pub struct WarnFlags {
     pub no_warn_crf_codec_mismatch: bool,
     /// Suppresses `[audio].warn_unnormalized_downmix`.
     pub no_warn_unnormalized_downmix: bool,
+    /// Suppresses `[video].warn_hdr_force_8bit`.
+    pub no_warn_hdr_force_8bit: bool,
     pub no_warn_missing: bool,
     /// Also suppresses the per-track no-op `normalize_downmix = true` warning.
     pub no_warn_redundant: bool,
@@ -489,6 +491,7 @@ fn run_convert_file(
     if dry_run {
         let probe = probe_source_streams(input)?;
         emit_normalize_warnings(&resolved.config, &probe, &warn_flags, out)?;
+        emit_hdr_force_8bit_warning(&resolved.config, &probe, &warn_flags, out)?;
         let output_exists = output_path.exists();
         print_dry_run_plan(
             &input_name,
@@ -538,6 +541,7 @@ fn run_convert_file(
     // --- Probe source (gets duration for progress bar) -----------------------
     let probe = probe_source_streams(input)?;
     emit_normalize_warnings(&resolved.config, &probe, &warn_flags, out)?;
+    emit_hdr_force_8bit_warning(&resolved.config, &probe, &warn_flags, out)?;
 
     // --- Create progress display ---------------------------------------------
     let progress = FileProgress::new(
@@ -664,6 +668,9 @@ fn build_cli_config(
     }
     if suppress_all || flags.no_warn_unnormalized_downmix {
         config.audio.warn_unnormalized_downmix = Some(false);
+    }
+    if suppress_all || flags.no_warn_hdr_force_8bit {
+        config.video.warn_hdr_force_8bit = Some(false);
     }
     // no_warn_missing and no_warn_redundant are accepted but have no Config
     // counterparts; they are consumed directly at emission time in
@@ -1483,6 +1490,47 @@ fn emit_normalize_warnings(
     Ok(())
 }
 
+/// Warn when `[video].force_8bit` (default true) is about to clamp a
+/// genuinely HDR source to 8-bit SDR. This depends on the probed source's
+/// color primaries/transfer, so — like `emit_normalize_warnings` — it runs
+/// after probing rather than at config-validation time.
+///
+/// `force_8bit` exists for the common case (10-bit SDR anime sources that
+/// only encode 10-bit for compression efficiency), where clamping to 8-bit
+/// is exactly the right, silent fix. A genuinely HDR source is different:
+/// clamping it without tone mapping doesn't just fail to direct-play, it
+/// looks wrong (crushed or washed-out color), so it gets a distinct warning
+/// rather than being silently handled the same way.
+fn emit_hdr_force_8bit_warning(
+    config: &Config,
+    probe: &probe::SourceProbe,
+    warn_flags: &WarnFlags,
+    out: &mut dyn Write,
+) -> Result<()> {
+    if !config.video.force_8bit.unwrap_or(true) {
+        return Ok(());
+    }
+    if !probe.video.is_hdr() {
+        return Ok(());
+    }
+    if warn_flags.no_warnings || !config.video.warn_hdr_force_8bit.unwrap_or(true) {
+        return Ok(());
+    }
+
+    writeln!(
+        out,
+        "  {}  source looks like HDR (BT.2020 + PQ/HLG transfer); force_8bit \
+         will clamp it to 8-bit SDR without tone mapping, which will look \
+         crushed or washed out rather than merely failing to direct-play. \
+         Set video.force_8bit = false to preserve the source, or pass \
+         --no-warn-hdr-force-8bit to suppress this warning.",
+        style("warning:").yellow().bold(),
+    )
+    .map_err(crate::io_render_err)?;
+
+    Ok(())
+}
+
 fn audio_track_label(t: &crate::config::AudioTrack) -> String {
     match (&t.title, &t.lang) {
         (Some(title), Some(lang)) => format!("\"{}\" ({})", title, lang),
@@ -1904,6 +1952,100 @@ mod tests {
             ..Default::default()
         };
         let out = run_warnings(&cfg, &probe_with_audio(&[6]), flags);
+        assert!(out.is_empty(), "expected no warning; got: {}", out);
+    }
+
+    // -------------------------------------------------------------------------
+    // emit_hdr_force_8bit_warning
+    // -------------------------------------------------------------------------
+
+    fn probe_with_video_color(primaries: &str, transfer: &str) -> probe::SourceProbe {
+        probe::SourceProbe {
+            video: probe::VideoStreamInfo {
+                color_primaries: Some(primaries.to_string()),
+                color_transfer: Some(transfer.to_string()),
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    }
+
+    fn run_hdr_warning(cfg: &Config, p: &probe::SourceProbe, flags: WarnFlags) -> String {
+        let mut buf: Vec<u8> = Vec::new();
+        emit_hdr_force_8bit_warning(cfg, p, &flags, &mut buf).unwrap();
+        String::from_utf8(buf).unwrap()
+    }
+
+    #[test]
+    fn warns_on_hdr_source_with_default_force_8bit() {
+        let cfg = parse("[video]\n");
+        let probe = probe_with_video_color("bt2020", "smpte2084");
+        let out = run_hdr_warning(&cfg, &probe, WarnFlags::default());
+        assert!(out.contains("HDR"), "got: {}", out);
+        assert!(out.contains("force_8bit"), "got: {}", out);
+    }
+
+    #[test]
+    fn warns_on_hlg_hdr_source_too() {
+        let cfg = parse("[video]\n");
+        let probe = probe_with_video_color("bt2020", "arib-std-b67");
+        let out = run_hdr_warning(&cfg, &probe, WarnFlags::default());
+        assert!(out.contains("HDR"), "got: {}", out);
+    }
+
+    #[test]
+    fn no_warning_for_ordinary_10bit_sdr_source() {
+        // bt709 SDR encoded 10-bit purely for compression efficiency — this
+        // is exactly the case force_8bit exists to silently fix; no warning.
+        let cfg = parse("[video]\n");
+        let probe = probe_with_video_color("bt709", "bt709");
+        let out = run_hdr_warning(&cfg, &probe, WarnFlags::default());
+        assert!(out.is_empty(), "expected no warning; got: {}", out);
+    }
+
+    #[test]
+    fn no_warning_when_force_8bit_already_disabled() {
+        // force_8bit = false means nothing gets clamped, so there's nothing
+        // to warn about even on a genuinely HDR source.
+        let cfg = parse("[video]\nforce_8bit = false\n");
+        let probe = probe_with_video_color("bt2020", "smpte2084");
+        let out = run_hdr_warning(&cfg, &probe, WarnFlags::default());
+        assert!(out.is_empty(), "expected no warning; got: {}", out);
+    }
+
+    #[test]
+    fn hdr_warning_suppressed_by_config_field() {
+        let cfg = parse("[video]\nwarn_hdr_force_8bit = false\n");
+        let probe = probe_with_video_color("bt2020", "smpte2084");
+        let out = run_hdr_warning(&cfg, &probe, WarnFlags::default());
+        assert!(out.is_empty(), "expected no warning; got: {}", out);
+    }
+
+    /// `--no-warn-hdr-force-8bit` doesn't gate the emit function directly
+    /// (same as `--no-warn-unnormalized-downmix`) — it's folded into the
+    /// resolved config by `build_cli_config` first. This exercises that
+    /// full chain rather than the emit function in isolation.
+    #[test]
+    fn hdr_warning_suppressed_by_cli_flag_via_build_cli_config() {
+        let flags = WarnFlags {
+            no_warn_hdr_force_8bit: true,
+            ..Default::default()
+        };
+        let cli_config = build_cli_config(None, flags, &[]).unwrap();
+        let probe = probe_with_video_color("bt2020", "smpte2084");
+        let out = run_hdr_warning(&cli_config, &probe, flags);
+        assert!(out.is_empty(), "expected no warning; got: {}", out);
+    }
+
+    #[test]
+    fn hdr_warning_suppressed_by_no_warnings_bulk_flag() {
+        let cfg = parse("[video]\n");
+        let probe = probe_with_video_color("bt2020", "smpte2084");
+        let flags = WarnFlags {
+            no_warnings: true,
+            ..Default::default()
+        };
+        let out = run_hdr_warning(&cfg, &probe, flags);
         assert!(out.is_empty(), "expected no warning; got: {}", out);
     }
 }
